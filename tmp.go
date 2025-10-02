@@ -10,6 +10,7 @@ import (
 	"github.com/dfryer1193/mimir/api/config"
 	"github.com/dfryer1193/mimir/client"
 	"github.com/dfryer1193/mjolnir/utils/set"
+	"github.com/rs/zerolog/log"
 )
 
 const namespace = "FooConfig"
@@ -31,7 +32,7 @@ type FooConfig struct {
 }
 
 func NewFooConfig(ctx context.Context) *FooConfig {
-	c, err := client.NewClient("localhost:8080")
+	c, err := client.NewClient("http://localhost:8080")
 	if err != nil {
 		panic(err)
 	}
@@ -40,7 +41,7 @@ func NewFooConfig(ctx context.Context) *FooConfig {
 		client: c,
 	}
 
-	cfg.client.Start(ctx, namespace, &config.Config{
+	curCfg, err := cfg.client.Start(ctx, namespace, &config.Config{
 		Namespace: namespace,
 		Items: []config.Item{
 			{
@@ -93,6 +94,9 @@ func NewFooConfig(ctx context.Context) *FooConfig {
 			},
 		},
 	})
+	if err != nil {
+		log.Err(err).Msg("Failed to start client, using defaults...")
+	}
 
 	cfg.setFuncs = map[string]client.SetFunc{
 		"foo":    cfg.setFoo,
@@ -105,6 +109,7 @@ func NewFooConfig(ctx context.Context) *FooConfig {
 		"grault": cfg.setGrault,
 	}
 
+	cfg.setFromRawConfig(curCfg)
 	go cfg.handleUpdates()
 
 	return cfg
@@ -115,7 +120,7 @@ func (c *FooConfig) setFromRawConfig(cfg *config.Config) error {
 		if setFunc, ok := c.setFuncs[item.Name]; ok {
 			setFunc(item.Value)
 		} else {
-			// TODO: log warning
+			log.Warn().Str("config_key", item.Name).Msg("Config key missing. You may need to redeploy.")
 		}
 	}
 
@@ -138,7 +143,7 @@ func (c *FooConfig) handleUpdate(update *config.Update) {
 	if setFunc, ok := c.setFuncs[update.FieldName]; ok {
 		setFunc(update.Value)
 	} else {
-		// TODO: log warning
+		log.Warn().Str("config_key", update.FieldName).Msg("Config key missing. You may need to redeploy.")
 	}
 }
 

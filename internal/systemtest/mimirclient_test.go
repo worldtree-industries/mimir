@@ -298,3 +298,40 @@ func TestServerURLOverrideTakesEffectLive(t *testing.T) {
 		t.Errorf("Registration retried after the server URL Override failed: %v", err)
 	}
 }
+
+func TestBadBucketPrefixOverrideNeverStrandsOrFlaps(t *testing.T) {
+	cases := map[string]func(h *systemtest.Harness){
+		// Nothing was ever published with the prefix: its buckets are empty
+		// or missing.
+		"prefix with nothing published": func(*systemtest.Harness) {},
+		// The Config's Snapshot is there, but not MimirClient's, so reading
+		// there would set the bucket prefix back to its start value.
+		"prefix without MimirClient's Snapshot": func(h *systemtest.Harness) {
+			h.PutSnapshotAt(t, h.Store, "nowhere", fooConsumerDev, fooSnapshot("stray"))
+		},
+	}
+	for name, setUp := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := systemtest.New(t)
+			cfg, d := startFooConsumer(t, h)
+			setUp(h)
+			h.CreateOverride(t, fooOverride("tuned"))
+			h.CreateOverride(t, clientSetting(client.BucketPrefixItem, "nowhere"))
+
+			for poll := range 3 {
+				h.NextPoll(t)
+				if got := cfg.GetFoo(); got != "tuned" {
+					t.Fatalf("poll %d: GetFoo() = %q, want %q still read from mimir-dev", poll, got, "tuned")
+				}
+				for _, err := range d.TakeLocationSwitches() {
+					if err == nil {
+						t.Fatalf(
+							"poll %d: the client moved to a prefix whose MimirClient Snapshot doesn't name it",
+							poll,
+						)
+					}
+				}
+			}
+		})
+	}
+}

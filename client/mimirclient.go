@@ -189,6 +189,30 @@ func (s *mimirClientValues) setBucketPrefix(value string) error {
 	return nil
 }
 
+// namedLocation is the location MimirClient names once snap is applied over
+// its start values. A value MimirClient would reject leaves that part of
+// current, as applying it would.
+func namedLocation(snap models.Snapshot, start map[models.ItemKey]string, current location) location {
+	value := func(item string) string {
+		key := models.ItemKey{Name: item, Type: models.TypeString}
+		if v, ok := snap.Value(key); ok {
+			return v
+		}
+
+		return start[key]
+	}
+
+	named := current
+	if endpoint := value(ObjectStoreEndpointItem); endpoint == "" || checkURL(endpoint) == nil {
+		named.endpoint = endpoint
+	}
+	if prefix := value(BucketPrefixItem); models.CheckBucketPrefix(prefix) == nil {
+		named.prefix = prefix
+	}
+
+	return named
+}
+
 func checkURL(value string) error {
 	u, err := url.Parse(value)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {

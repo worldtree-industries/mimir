@@ -16,6 +16,10 @@ import (
 // it can't read Snapshots and every Config stays on its Defaults.
 var errNoObjectStorage = errors.New("no object storage configured")
 
+// errLocationNotNamed means MimirClient's Snapshot at a new location
+// doesn't name that location, so the client won't move there.
+var errLocationNotNamed = errors.New("MimirClient's Snapshot there doesn't name the location")
+
 // errStorageDown means a Config skipped reading its Snapshot at Start because
 // object storage didn't answer the process's last read.
 var errStorageDown = errors.New("object storage didn't answer the last read; starting on Defaults")
@@ -310,14 +314,24 @@ func (rt *Runtime) ensureStore(ctx context.Context) error {
 }
 
 // switchTo moves the client to read from loc, if it can read every
-// Snapshot there; a missing Snapshot counts, since it means no Overrides. It
-// reports whether it moved. On failure the client keeps its current
-// location, so a bad location never strands it where it can't read the fix.
+// Snapshot there and MimirClient's Snapshot there names loc too. A missing
+// Snapshot of a Config counts, since it means no Overrides; but MimirClient's
+// must be there to name loc, unless loc is where its start values already
+// point. Otherwise a location where nothing was published would drop every
+// Config to its Defaults, and then, having lost the Override that pointed
+// there, send the client back again. It reports whether it moved. On failure
+// the client keeps its current location, so a bad location never strands it
+// where it can't read the fix.
 func (rt *Runtime) switchTo(ctx context.Context, loc location, configs []*Client) bool {
 	store, err := rt.storeFor(ctx, loc)
 	var self fetched
 	if err == nil {
 		self, err = rt.self.fetch(ctx, store, loc.prefix, "")
+	}
+	if err == nil {
+		if named := namedLocation(self.snap, rt.self.start, loc); named != loc {
+			err = fmt.Errorf("%w: it names %s", errLocationNotNamed, named)
+		}
 	}
 	fetchedConfigs := make([]fetched, len(configs))
 	for i, c := range configs {

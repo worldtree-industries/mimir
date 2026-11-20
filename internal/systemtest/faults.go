@@ -1,0 +1,85 @@
+package systemtest
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"sync/atomic"
+	"testing"
+
+	"github.com/worldtree-industries/mimir/models"
+)
+
+// errInjected is what a faulty store returns while a fault is switched on.
+var errInjected = errors.New("systemtest: injected object storage failure")
+
+// errUnreachable is what clients get for object storage at an endpoint the
+// harness doesn't have.
+var errUnreachable = errors.New("systemtest: no object storage at this endpoint")
+
+// faultyStore wraps a store, which mimir-server publishes through, so a test
+// can make uploads or the whole of object storage fail. Clients and the
+// test's own reads go to the wrapped store directly.
+type faultyStore struct {
+	models.ObjectStore
+
+	failUploads atomic.Bool
+	failAll     atomic.Bool
+	hold        atomic.Pointer[chan struct{}]
+	calls       atomic.Int64
+}
+
+func (f *faultyStore) Put(ctx context.Context, bucket, key string, body []byte) error {
+	f.calls.Add(1)
+	if gate := f.hold.Load(); gate != nil {
+		select {
+		case <-*gate:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if f.failUploads.Load() || f.failAll.Load() {
+		return errInjected
+	}
+
+	return f.ObjectStore.Put(ctx, bucket, key, body)
+}
+
+func (f *faultyStore) Get(ctx context.Context, bucket, key, etag string) (models.Object, error) {
+	f.calls.Add(1)
+	if f.failAll.Load() {
+		return models.Object{}, errInjected
+	}
+
+	return f.ObjectStore.Get(ctx, bucket, key, etag)
+}
+
+func (f *faultyStore) Delete(ctx context.Context, bucket, key string) error {
+	f.calls.Add(1)
+	if f.failAll.Load() {
+		return errInjected
+	}
+
+	return f.ObjectStore.Delete(ctx, bucket, key)
+}
+
+// HoldUploads makes every Snapshot upload from the servers wait, so a test
+// can decide what happens first. The returned function lets them go; it is
+// also called when the test ends.
+func (h *Harness) HoldUploads(t *testing.T) func() {
+	t.Helper()
+
+	gate := make(chan struct{})
+	h.served.hold.Store(&gate)
+
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			h.served.hold.Store(nil)
+			close(gate)
+		})
+	}
+	t.Cleanup(release)
+
+	return release
+}

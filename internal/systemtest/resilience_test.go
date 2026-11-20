@@ -63,8 +63,11 @@ func TestUnchangedSnapshotIsPolledConditionallyAndNotReapplied(t *testing.T) {
 	d.TakeValueEvents()
 
 	var sent []string
-	h.Store.SetGetFault(func(_, _, etag string) error {
-		sent = append(sent, etag)
+	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, fooConsumerDev)
+	h.Store.SetGetFault(func(bucket, key, etag string) error {
+		if bucket == loc.Bucket && key == loc.Key {
+			sent = append(sent, etag)
+		}
 		return nil
 	})
 	h.NextPoll(t)

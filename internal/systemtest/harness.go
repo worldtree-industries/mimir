@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -54,8 +55,13 @@ type Harness struct {
 	// URL is the in-process mimir-server's base URL.
 	URL string
 
+	served *faultyStore
+	dsn    string
+	pool   *db.Pool
+
 	mu          sync.Mutex
 	deployables []*RunningDeployable
+	replicas    []*Replica
 }
 
 // New starts mimir-server in-process against a fresh database, and stops it
@@ -64,28 +70,75 @@ func New(t *testing.T) *Harness {
 	t.Helper()
 
 	dsn := throwawayDatabase(t)
-	pool, err := db.Connect(t.Context(), dsn, db.Config{MinConns: 1, MaxConns: maxConns, ConnTimeout: awaitTimeout})
+	store := objectstore.NewMemory()
+	h := &Harness{
+		Store:  store,
+		Clock:  clock.NewFake(Epoch),
+		served: &faultyStore{Store: store},
+		dsn:    dsn,
+	}
+
+	primary := h.startServer(t)
+	h.URL = primary.URL
+	h.pool = primary.pool
+
+	return h
+}
+
+// Replica is another mimir-server instance on the Harness's database, object
+// storage and clock, as when several replicas run.
+type Replica struct {
+	// URL is the replica's base URL.
+	URL string
+
+	h          *Harness
+	pool       *db.Pool
+	reconciled chan struct{}
+}
+
+// NewReplica starts one more mimir-server on the same database and object
+// storage.
+func (h *Harness) NewReplica(t *testing.T) *Replica {
+	t.Helper()
+
+	return h.startServer(t)
+}
+
+func (h *Harness) startServer(t *testing.T) *Replica {
+	t.Helper()
+
+	pool, err := db.Connect(t.Context(), h.dsn, db.Config{MinConns: 1, MaxConns: maxConns, ConnTimeout: awaitTimeout})
 	if err != nil {
 		t.Fatalf("connect to the throwaway database: %v", err)
 	}
 	t.Cleanup(pool.Close)
 
-	h := &Harness{Store: objectstore.NewMemory(), Clock: clock.NewFake(Epoch)}
+	r := &Replica{h: h, pool: pool, reconciled: make(chan struct{}, eventBuffer)}
 
 	handler, err := server.New(t.Context(), server.Config{
 		Pool:        pool,
-		ObjectStore: h.Store,
+		ObjectStore: h.served,
 		Clock:       h.Clock,
 		Logger:      log.GetLoggerTo("mimir-server", t.Output()),
+		OnReconcile: func() {
+			select {
+			case r.reconciled <- struct{}{}:
+			default:
+			}
+		},
 	})
 	if err != nil {
 		t.Fatalf("start mimir-server: %v", err)
 	}
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	h.URL = srv.URL
+	r.URL = srv.URL
 
-	return h
+	h.mu.Lock()
+	h.replicas = append(h.replicas, r)
+	h.mu.Unlock()
+
+	return r
 }
 
 // Deployable describes a program that reads a Config through the client.
@@ -208,6 +261,7 @@ func (h *Harness) NextPoll(t *testing.T) {
 
 	h.mu.Lock()
 	deployables := h.deployables
+	waiters := len(deployables) + len(h.replicas)
 	h.mu.Unlock()
 
 	for _, d := range deployables {
@@ -216,7 +270,7 @@ func (h *Harness) NextPoll(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), awaitTimeout)
 	defer cancel()
-	if err := h.Clock.WaitForWaiters(ctx, len(deployables)); err != nil {
+	if err := h.Clock.WaitForWaiters(ctx, waiters); err != nil {
 		t.Fatalf("clients never waited for their next poll: %v", err)
 	}
 	h.Clock.Advance(client.DefaultPollInterval)
@@ -241,11 +295,114 @@ func (d *RunningDeployable) LastPollError() error {
 	return d.lastPollErr
 }
 
+// Reconcile moves the clock one reconcile interval on, once every server is
+// waiting for it, and returns when each has finished reconciling.
+func (h *Harness) Reconcile(t *testing.T) {
+	t.Helper()
+
+	h.mu.Lock()
+	replicas := slices.Clone(h.replicas)
+	waiters := len(h.deployables) + len(replicas)
+	h.mu.Unlock()
+
+	for _, r := range replicas {
+		for len(r.reconciled) > 0 {
+			<-r.reconciled
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), awaitTimeout)
+	defer cancel()
+	if err := h.Clock.WaitForWaiters(ctx, waiters); err != nil {
+		t.Fatalf("servers never waited for their next reconcile: %v", err)
+	}
+	h.Clock.Advance(server.DefaultReconcileInterval)
+
+	for _, r := range replicas {
+		select {
+		case <-r.reconciled:
+		case <-time.After(awaitTimeout):
+			t.Fatal("timed out waiting for a server to reconcile")
+		}
+	}
+}
+
+// FailUploads makes every Snapshot upload from the servers fail, or stops
+// that.
+func (h *Harness) FailUploads(fail bool) { h.served.failUploads.Store(fail) }
+
+// FailObjectStore makes the servers' every object storage call fail, or stops
+// that.
+func (h *Harness) FailObjectStore(fail bool) { h.served.failAll.Store(fail) }
+
+// StopPostgres closes the primary server's database connections for good.
+func (h *Harness) StopPostgres() { h.pool.Close() }
+
+// StoreCalls counts the calls the servers have made to object storage.
+func (h *Harness) StoreCalls() int64 { return h.served.calls.Load() }
+
+// AdvancePastReadinessCache moves the clock far enough that the next /readyz
+// checks the dependencies afresh.
+func (h *Harness) AdvancePastReadinessCache() { h.Clock.Advance(server.ReadinessCacheTTL) }
+
+// Ready returns the status of the primary server's /readyz.
+func (h *Harness) Ready(t *testing.T) int {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, h.URL+"/readyz", http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /readyz: %v", err)
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode
+}
+
+// DeleteSnapshot removes ns's Snapshot from object storage.
+func (h *Harness) DeleteSnapshot(t *testing.T, ns models.Namespace) {
+	t.Helper()
+
+	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
+	if err := h.Store.Delete(t.Context(), loc.Bucket, loc.Key); err != nil {
+		t.Fatalf("delete Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
+	}
+}
+
+// SnapshotETag returns the ETag of ns's published Snapshot.
+func (h *Harness) SnapshotETag(t *testing.T, ns models.Namespace) string {
+	t.Helper()
+
+	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
+	obj, err := h.Store.Get(t.Context(), loc.Bucket, loc.Key, "")
+	if err != nil {
+		t.Fatalf("read Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
+	}
+
+	return obj.ETag
+}
+
 // CreateOverride creates o through the admin API and returns it as created.
 func (h *Harness) CreateOverride(t *testing.T, o models.Override) models.Override {
 	t.Helper()
 
-	status, body := h.Post(t, "/v1/overrides", o)
+	return createOverride(t, h.URL, o)
+}
+
+// CreateOverride creates o through this replica's admin API.
+func (r *Replica) CreateOverride(t *testing.T, o models.Override) models.Override {
+	t.Helper()
+
+	return createOverride(t, r.URL, o)
+}
+
+func createOverride(t *testing.T, baseURL string, o models.Override) models.Override {
+	t.Helper()
+
+	status, body := post(t, baseURL, "/v1/overrides", o)
 	if status != http.StatusCreated {
 		t.Fatalf("create Override: status %d, body %s", status, body)
 	}
@@ -263,11 +420,17 @@ func (h *Harness) CreateOverride(t *testing.T, o models.Override) models.Overrid
 func (h *Harness) Post(t *testing.T, path string, payload any) (int, []byte) {
 	t.Helper()
 
+	return post(t, h.URL, path, payload)
+}
+
+func post(t *testing.T, baseURL, path string, payload any) (int, []byte) {
+	t.Helper()
+
 	reqBody, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, h.URL+path, bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, baseURL+path, bytes.NewReader(reqBody))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,30 +485,6 @@ func (h *Harness) PutSnapshot(t *testing.T, ns models.Namespace, snap models.Sna
 	if err = h.Store.Put(t.Context(), loc.Bucket, loc.Key, body); err != nil {
 		t.Fatalf("write Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
 	}
-}
-
-// DeleteSnapshot removes ns's Snapshot from the store, as expiring the
-// Namespace does.
-func (h *Harness) DeleteSnapshot(t *testing.T, ns models.Namespace) {
-	t.Helper()
-
-	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
-	if err := h.Store.Delete(t.Context(), loc.Bucket, loc.Key); err != nil {
-		t.Fatalf("delete Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
-	}
-}
-
-// SnapshotETag is the ETag of ns's Snapshot in the store.
-func (h *Harness) SnapshotETag(t *testing.T, ns models.Namespace) string {
-	t.Helper()
-
-	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
-	obj, err := h.Store.Get(t.Context(), loc.Bucket, loc.Key, "")
-	if err != nil {
-		t.Fatalf("read Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
-	}
-
-	return obj.ETag
 }
 
 func await(t *testing.T, ch <-chan error, what string) error {

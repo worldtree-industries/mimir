@@ -2,8 +2,11 @@ package data
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/worldtree-industries/mimir/models"
 )
@@ -76,4 +79,46 @@ func (s *Store) Namespaces(ctx context.Context, config string) ([]models.Namespa
 	}
 
 	return namespaces, nil
+}
+
+// AllNamespaces returns every known Namespace.
+func (s *Store) AllNamespaces(ctx context.Context) ([]models.Namespace, error) {
+	rows, err := s.q(ctx).Query(ctx, `
+		SELECT config, deployable, environment FROM namespaces
+		ORDER BY config, deployable, environment`)
+	if err != nil {
+		return nil, fmt.Errorf("list Namespaces: %w", err)
+	}
+	defer rows.Close()
+
+	var namespaces []models.Namespace
+	for rows.Next() {
+		var ns models.Namespace
+		if err = rows.Scan(&ns.Config, &ns.Deployable, &ns.Environment); err != nil {
+			return nil, fmt.Errorf("read Namespace: %w", err)
+		}
+		namespaces = append(namespaces, ns)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("list Namespaces: %w", err)
+	}
+
+	return namespaces, nil
+}
+
+// AnyNamespace returns one known Namespace, or false when there is none. It
+// is cheap, unlike AllNamespaces.
+func (s *Store) AnyNamespace(ctx context.Context) (models.Namespace, bool, error) {
+	var ns models.Namespace
+	err := s.q(ctx).QueryRow(ctx, `
+		SELECT config, deployable, environment FROM namespaces
+		ORDER BY id LIMIT 1`).Scan(&ns.Config, &ns.Deployable, &ns.Environment)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.Namespace{}, false, nil
+	}
+	if err != nil {
+		return models.Namespace{}, false, fmt.Errorf("find a Namespace: %w", err)
+	}
+
+	return ns, true, nil
 }

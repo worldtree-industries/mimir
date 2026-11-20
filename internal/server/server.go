@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/dfryer1193/mjolnir/health"
 	"github.com/dfryer1193/mjolnir/router"
@@ -30,10 +31,22 @@ type Config struct {
 	Clock clock.Clock
 	// Logger receives the server's logs, including access lines.
 	Logger *slog.Logger
+	// ReconcileInterval is how often every Snapshot is republished from
+	// Postgres. Zero means DefaultReconcileInterval.
+	ReconcileInterval time.Duration
+	// OnReconcile, if set, is called after each reconcile. Tests use it to
+	// know one finished.
+	OnReconcile func()
 }
 
+// DefaultReconcileInterval is how often Snapshots are republished by default.
+const DefaultReconcileInterval = service.DefaultReconcileInterval
+
+// ReadinessCacheTTL is how long /readyz repeats its last answer.
+const ReadinessCacheTTL = service.ReadyCacheTTL
+
 // New migrates the database and returns mimir-server's router, ready to
-// serve.
+// serve. It also starts the periodic reconcile, which runs until ctx is done.
 func New(ctx context.Context, cfg Config) (*router.Router, error) {
 	store := data.NewStore(cfg.Pool)
 	if err := store.Migrate(ctx); err != nil {
@@ -50,8 +63,7 @@ func New(ctx context.Context, cfg Config) (*router.Router, error) {
 	r, err := router.New(router.Config{
 		Health: health.Config{
 			Started: health.AlwaysStarted,
-			// TODO(#15): readiness reflects Postgres and object storage.
-			Ready: health.AlwaysReady,
+			Ready:   svc.Ready,
 		},
 		AccessLogger: cfg.Logger,
 	})
@@ -59,6 +71,12 @@ func New(ctx context.Context, cfg Config) (*router.Router, error) {
 		return nil, fmt.Errorf("build router: %w", err)
 	}
 	api.Routes(r, svc, cfg.Logger)
+
+	interval := cfg.ReconcileInterval
+	if interval <= 0 {
+		interval = DefaultReconcileInterval
+	}
+	go svc.RunReconcile(ctx, interval, cfg.OnReconcile)
 
 	return r, nil
 }

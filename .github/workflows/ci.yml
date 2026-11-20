@@ -1,10 +1,15 @@
 # Managed by Ivaldi. This file is the same in every Project and is kept
 # current for you, so don't edit it. CI logic lives in the shared workflow.
+#
+# Every merge to main releases the next version: a patch, or the bump a
+# semver:minor or semver:major label on the pull request asks for.
 name: ci
 
 on:
   pull_request:
     branches: [main]
+    # labeled and unlabeled re-run the release dry run when the bump changes.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
     tags: ['v*.*.*']
@@ -18,7 +23,13 @@ concurrency:
 
 jobs:
   go:
-    uses: worldtree-industries/workflows/.github/workflows/go.yml@e27aff84ed75bc3995068bce81b197c7dd6eafff # v1.0.0
+    # contents: write pushes the release tag; issues and pull-requests read the
+    # merged pull request's labels.
+    permissions:
+      contents: write
+      issues: read
+      pull-requests: read
+    uses: worldtree-industries/workflows/.github/workflows/go.yml@1871647922e0739445221c34f8917ab1566e46b1 # v1.2.0
     secrets:
       HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
       HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}

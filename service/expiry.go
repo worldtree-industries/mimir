@@ -22,10 +22,10 @@ const expiryCaller = "mimir-server:expiry"
 // expired is what one run of Expire removed.
 type expired struct {
 	items int
-	// overridesLost are the Configs that lost Overrides, whose Snapshots
-	// must be republished.
-	overridesLost map[string]bool
-	namespaces    []models.Namespace
+	// overrideScopes are the Scopes of the Overrides removed: the Snapshots
+	// of the Namespaces they cover must be republished.
+	overrideScopes []models.Scope
+	namespaces     []models.Namespace
 }
 
 // Expire removes what has gone unregistered for ExpiryAge: Items, with their
@@ -70,8 +70,8 @@ func (s *Service) Expire(ctx context.Context) error {
 				"config", ns.Config, "deployable", ns.Deployable, "environment", ns.Environment, "error", err)
 		}
 	}
-	for config := range gone.overridesLost {
-		s.publishConfigLogged(ctx, config)
+	for _, scope := range gone.overrideScopes {
+		s.publishScopeLogged(ctx, scope)
 	}
 
 	return nil
@@ -80,7 +80,7 @@ func (s *Service) Expire(ctx context.Context) error {
 // expireInTx removes what went unregistered since cutoff, recording the
 // removal of each Override. It runs in a transaction.
 func (s *Service) expireInTx(ctx context.Context, cutoff time.Time) (expired, error) {
-	gone := expired{overridesLost: map[string]bool{}}
+	var gone expired
 
 	items, err := s.store.ExpiredItems(ctx, cutoff)
 	if err != nil {
@@ -91,7 +91,7 @@ func (s *Service) expireInTx(ctx context.Context, cutoff time.Time) (expired, er
 			if err = s.recordHistory(ctx, models.HistoryDeleted, o.Scope, o.Item, &o.Value, nil); err != nil {
 				return expired{}, err
 			}
-			gone.overridesLost[item.Config] = true
+			gone.overrideScopes = append(gone.overrideScopes, o.Scope)
 		}
 		if err = s.store.DeleteItem(ctx, item.ID); err != nil {
 			return expired{}, err

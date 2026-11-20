@@ -9,12 +9,18 @@ import (
 )
 
 // Memory is a [Store] held in memory. Tests share one between mimir-server
-// and the clients they run. Buckets need no creating. The zero value is not
-// usable; call NewMemory.
+// and the clients they run, and inject faults into it with SetGetFault.
+// Buckets need no creating. The zero value is not usable; call NewMemory.
 type Memory struct {
-	mu      sync.RWMutex
-	objects map[location]Object
+	mu       sync.RWMutex
+	objects  map[location]Object
+	getFault GetFault
 }
+
+// GetFault is called with each Get's arguments before the store answers it.
+// A non-nil error is returned from Get in place of its answer, as if the
+// store were unreachable or failing.
+type GetFault func(bucket, key, etag string) error
 
 type location struct {
 	bucket, key string
@@ -42,6 +48,15 @@ func (m *Memory) Put(_ context.Context, bucket, key string, body []byte) error {
 // contract for etag.
 func (m *Memory) Get(_ context.Context, bucket, key, etag string) (Object, error) {
 	m.mu.RLock()
+	fault := m.getFault
+	m.mu.RUnlock()
+	if fault != nil {
+		if err := fault(bucket, key, etag); err != nil {
+			return Object{}, err
+		}
+	}
+
+	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	obj, ok := m.objects[location{bucket, key}]
@@ -63,4 +78,14 @@ func (m *Memory) Delete(_ context.Context, bucket, key string) error {
 	delete(m.objects, location{bucket, key})
 
 	return nil
+}
+
+// SetGetFault makes f see every later Get, and fail it by returning an
+// error. A nil f removes the fault. It is for tests; Put and Delete are
+// unaffected, so mimir-server keeps publishing while clients can't read.
+func (m *Memory) SetGetFault(f GetFault) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.getFault = f
 }

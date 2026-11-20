@@ -18,6 +18,9 @@ var ErrUnknownItem = errors.New("no such registered Item")
 // ErrOverrideExists means the Item already has an Override for that Scope.
 var ErrOverrideExists = errors.New("an Override already exists for that Item and Scope")
 
+// ErrOverrideNotFound means there is no Override with that ID.
+var ErrOverrideNotFound = errors.New("no such Override")
+
 // CreateOverride stores o, created at time at, and returns it with its ID.
 // The Item must be registered.
 func (s *Store) CreateOverride(ctx context.Context, o models.Override, at time.Time) (models.Override, error) {
@@ -65,4 +68,60 @@ func (s *Store) Overrides(ctx context.Context, config string) ([]models.Override
 	}
 
 	return overrides, nil
+}
+
+// Override returns Override id, locking it for the rest of the transaction.
+func (s *Store) Override(ctx context.Context, id int64) (models.Override, error) {
+	var o models.Override
+	err := s.q(ctx).QueryRow(ctx, `
+		SELECT o.id, i.config, coalesce(o.deployable, ''), coalesce(o.environment, ''), i.name, i.type, o.value
+		FROM overrides o JOIN items i ON i.id = o.item_id
+		WHERE o.id = $1 FOR UPDATE OF o`, id,
+	).Scan(&o.ID, &o.Scope.Config, &o.Scope.Deployable, &o.Scope.Environment, &o.Item.Name, &o.Item.Type, &o.Value)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return models.Override{}, ErrOverrideNotFound
+	case err != nil:
+		return models.Override{}, fmt.Errorf("read Override %d: %w", id, err)
+	}
+
+	return o, nil
+}
+
+// UpdateOverride sets the value of Override id, as of time at, and returns it.
+func (s *Store) UpdateOverride(ctx context.Context, id int64, value string, at time.Time) (models.Override, error) {
+	var o models.Override
+	err := s.q(ctx).QueryRow(ctx, `
+		UPDATE overrides o SET value = $2, updated_at = $3 FROM items i
+		WHERE o.id = $1 AND i.id = o.item_id
+		RETURNING o.id, i.config, coalesce(o.deployable, ''), coalesce(o.environment, ''), i.name, i.type, o.value`,
+		id, value, at,
+	).Scan(&o.ID, &o.Scope.Config, &o.Scope.Deployable, &o.Scope.Environment, &o.Item.Name, &o.Item.Type, &o.Value)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return models.Override{}, ErrOverrideNotFound
+	case err != nil:
+		return models.Override{}, fmt.Errorf("update Override %d: %w", id, err)
+	}
+
+	return o, nil
+}
+
+// DeleteOverride removes Override id and returns what it was.
+func (s *Store) DeleteOverride(ctx context.Context, id int64) (models.Override, error) {
+	var o models.Override
+	err := s.q(ctx).QueryRow(ctx, `
+		WITH gone AS (DELETE FROM overrides WHERE id = $1 RETURNING *)
+		SELECT g.id, i.config, coalesce(g.deployable, ''), coalesce(g.environment, ''), i.name, i.type, g.value
+		FROM gone g JOIN items i ON i.id = g.item_id`,
+		id,
+	).Scan(&o.ID, &o.Scope.Config, &o.Scope.Deployable, &o.Scope.Environment, &o.Item.Name, &o.Item.Type, &o.Value)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return models.Override{}, ErrOverrideNotFound
+	case err != nil:
+		return models.Override{}, fmt.Errorf("delete Override %d: %w", id, err)
+	}
+
+	return o, nil
 }

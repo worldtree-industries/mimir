@@ -56,12 +56,23 @@ const (
 	EventRegistered EventKind = "registered"
 	// EventPolled is a finished poll of the Snapshot.
 	EventPolled EventKind = "polled"
+	// EventValueChanged is an Item taking a new value: Value is what its
+	// getter now returns, as a string.
+	EventValueChanged EventKind = "value_changed"
+	// EventValueRejected is a value that doesn't parse as its Item's type:
+	// Value is the rejected value, Err why, and the Item keeps its last good
+	// value.
+	EventValueRejected EventKind = "value_rejected"
 )
 
 // Event reports a step the client took. Err is set when the step failed.
+// Item and Value are set only for the value events, EventValueChanged and
+// EventValueRejected. A poll's value events come before its EventPolled.
 type Event struct {
-	Kind EventKind
-	Err  error
+	Kind  EventKind
+	Err   error
+	Item  models.ItemKey
+	Value string
 }
 
 // Client keeps one Config's values current. It is what Start returns; its
@@ -77,9 +88,16 @@ type Client struct {
 	serverURL string
 	http      *http.Client
 
-	// etag is the ETag of the last Snapshot applied. Only the polling
-	// goroutine touches it after Start returns.
+	// The polling state below is touched only by whichever goroutine is
+	// polling: Start's until it returns, then the poll loop's.
+
+	// etag is the ETag of the last Snapshot applied.
 	etag string
+	// good is each Item's last good value: what its getter returns.
+	good map[models.ItemKey]string
+	// rejected is each Item's last rejected value, so a bad value that stays
+	// in the Snapshot is reported once rather than on every poll.
+	rejected map[models.ItemKey]string
 }
 
 // Start applies the Definition's Defaults, determines the Namespace, reads the
@@ -98,12 +116,14 @@ func Start(ctx context.Context, def Definition, opts ...Option) *Client {
 		onEvent:   o.onEvent,
 		serverURL: o.getenv("MIMIR_SERVER_URL"),
 		http:      &http.Client{Timeout: registrationTimeout},
+		good:      make(map[models.ItemKey]string, len(def.Items)),
+		rejected:  make(map[models.ItemKey]string),
 	}
 	if c.serverURL == "" {
 		c.serverURL = defaultServerURL
 	}
 
-	c.applySnapshot(models.Snapshot{})
+	c.applyDefaults(ctx)
 
 	ns, err := discoverNamespace(def.Config, o.getenv, o.buildPath)
 	if err != nil {
@@ -143,9 +163,9 @@ func (c *Client) Namespace() models.Namespace {
 	return c.ns
 }
 
-func (c *Client) emit(kind EventKind, err error) {
+func (c *Client) emit(e Event) {
 	if c.onEvent != nil {
-		c.onEvent(Event{Kind: kind, Err: err})
+		c.onEvent(e)
 	}
 }
 
@@ -191,8 +211,11 @@ func WithLogger(l *slog.Logger) Option {
 	return func(o *options) { o.logger = l }
 }
 
-// WithEventHandler sets a function told about each Event. It is called from
-// the client's goroutines and must not block for long.
+// WithEventHandler sets a function told about each Event: value changes and
+// rejections, polls and Registrations. It is called from the client's
+// goroutines, one Event at a time, and must not block for long. The startup
+// poll's Events arrive before Start (and so the generated constructor)
+// returns.
 func WithEventHandler(f func(Event)) Option {
 	return func(o *options) { o.onEvent = f }
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/dfryer1193/mjolnir/health"
 	"github.com/dfryer1193/mjolnir/router"
 	"github.com/dfryer1193/mjolnir/utils/db"
+	"github.com/dfryer1193/mjolnir/utils/environment"
 
 	"github.com/worldtree-industries/mimir/api"
 	"github.com/worldtree-industries/mimir/data"
@@ -69,6 +70,14 @@ func New(ctx context.Context, cfg Config) (*router.Router, error) {
 		Clock:     cfg.Clock,
 		Logger:    cfg.Logger,
 	})
+
+	var envs []string
+	for _, e := range environment.List() {
+		envs = append(envs, e.String())
+	}
+	if err := svc.EnsureEnvironments(ctx, envs); err != nil {
+		return nil, fmt.Errorf("create Environments: %w", err)
+	}
 
 	r, err := router.New(router.Config{
 		Health: health.Config{

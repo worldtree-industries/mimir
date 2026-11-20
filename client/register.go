@@ -52,7 +52,7 @@ func (c *Client) register(ctx context.Context) error {
 	if err != nil {
 		c.logger.ErrorContext(ctx, "Registration failed; values are unaffected", "error", err)
 	}
-	c.emit(EventRegistered, err)
+	c.emit(Event{Kind: EventRegistered, Err: err})
 
 	return err
 }

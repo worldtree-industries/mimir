@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 
 	"github.com/dfryer1193/mjolnir/utils/httpx"
 	"github.com/go-chi/chi/v5"
@@ -18,6 +19,15 @@ import (
 //
 //	POST /v1/registrations  Registration, from clients (204)
 //	POST /v1/overrides      create an Override (201, the Override with its ID)
+//	PUT /v1/overrides/{id}  set an Override's value (body {"value": ...}; 200, the Override)
+//	DELETE /v1/overrides/{id}  delete an Override (204)
+//	GET /v1/overrides       list a Config's Overrides: ?config= (required), and
+//	                        optionally ?deployable= and ?environment=, each an
+//	                        exact match (empty means not narrowed) or, if
+//	                        absent, any (200, {"overrides": [...]})
+//	GET /v1/explain         ?config=&deployable=&environment= the Namespace's
+//	                        Items, each with its effective value and Source
+//	                        (200, models.Explanation)
 //	GET  /v1/history        the history of Override changes, oldest first (200);
 //	                        filter with the config, deployable and environment
 //	                        query parameters
@@ -41,10 +51,15 @@ func Routes(r chi.Router, svc *service.Service, logger *slog.Logger) {
 
 	r.Post("/v1/registrations", handle(h.register))
 	r.Post("/v1/overrides", handle(h.createOverride))
+	r.Get("/v1/overrides", handle(h.listOverrides))
+	r.Get("/v1/explain", handle(h.explain))
+	r.Put("/v1/overrides/{id}", handle(h.updateOverride))
+	r.Delete("/v1/overrides/{id}", handle(h.deleteOverride))
 	r.Get("/v1/history", handle(h.history))
 	r.Get("/v1/configs", handle(h.configs))
 	r.Get("/v1/items", handle(h.items))
 	r.Get("/v1/namespaces", handle(h.namespaces))
+	r.Get("/v1/environments", handle(h.environments))
 }
 
 func (h handlers) configs(w http.ResponseWriter, r *http.Request) error {
@@ -92,6 +107,15 @@ func (h handlers) register(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func (h handlers) environments(w http.ResponseWriter, r *http.Request) error {
+	names, err := h.svc.Environments(r.Context())
+	if err != nil {
+		return err
+	}
+
+	return h.codec.Respond(w, r, http.StatusOK, map[string][]string{"environments": names})
+}
+
 func (h handlers) createOverride(w http.ResponseWriter, r *http.Request) error {
 	var o models.Override
 	if err := h.codec.Decode(w, r, &o); err != nil {
@@ -105,6 +129,82 @@ func (h handlers) createOverride(w http.ResponseWriter, r *http.Request) error {
 	return h.codec.Respond(w, r, http.StatusCreated, created)
 }
 
+func (h handlers) listOverrides(w http.ResponseWriter, r *http.Request) error {
+	q := r.URL.Query()
+	filter := service.ScopeFilter{Config: q.Get("config")}
+	if q.Has("deployable") {
+		deployable := q.Get("deployable")
+		filter.Deployable = &deployable
+	}
+	if q.Has("environment") {
+		environment := q.Get("environment")
+		filter.Environment = &environment
+	}
+
+	overrides, err := h.svc.ListOverrides(r.Context(), filter)
+	if err != nil {
+		return problem(err)
+	}
+
+	return h.codec.Respond(w, r, http.StatusOK, map[string][]models.Override{"overrides": overrides})
+}
+
+func (h handlers) explain(w http.ResponseWriter, r *http.Request) error {
+	q := r.URL.Query()
+	explanation, err := h.svc.Explain(r.Context(), models.Namespace{
+		Config:      q.Get("config"),
+		Deployable:  q.Get("deployable"),
+		Environment: q.Get("environment"),
+	})
+	if err != nil {
+		return problem(err)
+	}
+
+	return h.codec.Respond(w, r, http.StatusOK, explanation)
+}
+
+func (h handlers) updateOverride(w http.ResponseWriter, r *http.Request) error {
+	id, err := overrideID(r)
+	if err != nil {
+		return err
+	}
+	var body struct {
+		Value string `json:"value"`
+	}
+	if err = h.codec.Decode(w, r, &body); err != nil {
+		return err
+	}
+	updated, err := h.svc.UpdateOverride(callerContext(r), id, body.Value)
+	if err != nil {
+		return problem(err)
+	}
+
+	return h.codec.Respond(w, r, http.StatusOK, updated)
+}
+
+func (h handlers) deleteOverride(w http.ResponseWriter, r *http.Request) error {
+	id, err := overrideID(r)
+	if err != nil {
+		return err
+	}
+	if err = h.svc.DeleteOverride(callerContext(r), id); err != nil {
+		return problem(err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+
+	return nil
+}
+
+// overrideID reads the {id} of an Override's path.
+func overrideID(r *http.Request) (int64, error) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id < 1 {
+		return 0, httpx.BadRequest("invalid_id", "the Override ID must be a positive integer")
+	}
+
+	return id, nil
+}
+
 // problem turns a service error into the problem the client is sent.
 func problem(err error) error {
 	switch {
@@ -112,6 +212,10 @@ func problem(err error) error {
 		return httpx.UnprocessableEntity("invalid_request", err.Error())
 	case errors.Is(err, service.ErrUnknownItem):
 		return httpx.UnprocessableEntity("unknown_item", err.Error())
+	case errors.Is(err, service.ErrUnknownNamespace):
+		return httpx.NotFound("unknown_namespace", err.Error())
+	case errors.Is(err, service.ErrOverrideNotFound):
+		return httpx.NotFound("override_not_found", err.Error())
 	case errors.Is(err, service.ErrOverrideExists):
 		return httpx.Conflict("override_exists", err.Error())
 	default:

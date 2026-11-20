@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"log/slog"
-	"net/http"
 	"os"
 	"time"
 
@@ -79,115 +78,55 @@ type Event struct {
 }
 
 // Client keeps one Config's values current. It is what Start returns; its
-// work happens in the background until Start's context is done.
-//
-// Alongside the Config it reads MimirClient, the Config of its own settings
-// (poll interval, server URL, object storage endpoint and bucket prefix), in
-// the same Deployable and Environment, so those can be tuned live too.
+// work happens in the background, in the Runtime it shares with the
+// process's other Configs, until Start's context is done.
 type Client struct {
-	clock     models.Clock
-	logger    *slog.Logger
-	onEvent   func(Event)
-	openStore func(ctx context.Context, endpoint string) (models.ObjectReader, error)
-	http      *http.Client
-	settings  *settings
-
-	// The polling state below is touched only by whichever goroutine is
-	// polling: Start's until it returns, then the poll loop's.
-
-	// user is the Config the program reads, and self is MimirClient.
-	user, self *configPoll
-	// at is the location Snapshots are read from, and store the object
-	// storage at its endpoint. They change only once both Snapshots have
-	// been read at the location the settings name.
-	at    location
-	store models.ObjectReader
+	ctx     context.Context
+	onEvent func(Event)
+	poll    *configPoll
+	// registrationDue is when the Config is next due to register. Only the
+	// Runtime's loop touches it.
+	registrationDue time.Time
 }
 
-// Start applies the Definition's Defaults, determines the Namespace, reads the
-// Namespace's Snapshot once, and then, in the background until ctx is done,
-// registers the Config with mimir-server (again every
-// DefaultRegistrationInterval) and polls the Snapshot every poll interval.
-// Nothing it does in the background can stop the program reading values: on
-// any failure the Config keeps its current values.
+// Start applies the Definition's Defaults and reads the Config's Snapshot
+// once, and then, in the background until ctx is done, registers the Config
+// with mimir-server (again every DefaultRegistrationInterval) and polls its
+// Snapshot every poll interval. Nothing it does in the background can stop
+// the program reading values: on any failure the Config keeps its current
+// values.
 //
-// The client's own settings start from environment variables or their
-// Defaults at every Start, so an Override that moved a client somewhere bad
-// never survives a restart: it is adopted again only once it has been read
-// from the starting location.
+// Every Config in a process shares one Runtime (see WithRuntime): the
+// Namespace's Deployable and Environment, object storage, and the
+// MimirClient Config, which the first Start reads (waiting at most 5
+// seconds) and which is registered and polled once for the whole process.
+// A later Start reads its own Snapshot only if object storage answered the
+// process's last read, so a cold start with storage down waits once, not
+// once per Config.
+//
+// MimirClient starts from environment variables or its Defaults whenever a
+// process starts, so an Override that moved a client somewhere bad never
+// survives a restart: it is adopted again only once it has been read from
+// the starting location.
 func Start(ctx context.Context, def Definition, opts ...Option) *Client {
 	o := newOptions(opts)
-	c := &Client{
-		clock:     o.clock,
-		logger:    o.logger.With("config", def.Config),
-		onEvent:   o.onEvent,
-		openStore: o.openStore,
-		http:      &http.Client{Timeout: registrationTimeout},
-		settings:  &settings{},
-	}
-	c.user = newConfigPoll(def, c.logger, c.emit)
-	c.self = newConfigPoll(c.settings.definition(), c.logger, c.reportSetting)
-
-	c.user.applyStart(ctx)
-	c.self.startFromEnv(ctx, o.getenv)
-	c.self.applyStart(ctx)
-	c.at = c.settings.wantedLocation()
-
-	ns, err := discoverNamespace(def.Config, o.getenv, o.buildPath)
-	if err != nil {
-		c.logger.ErrorContext(ctx, "Can't determine the Namespace; running on Defaults only", "error", err)
-		return c
-	}
-	c.user.ns = ns
-	c.self.ns = models.Namespace{Config: MimirClientConfig, Deployable: ns.Deployable, Environment: ns.Environment}
-	c.logger = c.logger.With("deployable", ns.Deployable, "environment", ns.Environment)
-	c.user.logger = c.logger
-	c.self.logger = c.logger.With("settings", MimirClientConfig)
-
-	if c.openStore == nil && (s3Configured(o.getenv) || c.at.endpoint != "") {
-		c.openStore = s3Opener(o.getenv)
-	}
-	// Registration doesn't need object storage, so it runs whatever happens
-	// to the store.
-	defer func() { go c.registerEvery(ctx) }()
-
-	if c.openStore == nil {
-		c.logger.ErrorContext(ctx, "No object storage configured; running on Defaults only")
-		return c
-	}
-	c.store, err = c.openStore(ctx, c.at.endpoint)
-	if err != nil {
-		c.logger.ErrorContext(ctx, "Can't configure object storage; running on Defaults only", "error", err)
-		return c
+	rt := o.runtime
+	if rt == nil {
+		rt = sharedRuntime(opts)
 	}
 
-	startupCtx, cancel := context.WithTimeout(ctx, startupPollTimeout)
-	c.poll(startupCtx)
-	cancel()
-
-	go c.pollEvery(ctx)
-
-	return c
+	return rt.start(ctx, def, o.onEvent)
 }
 
 // Namespace is the Namespace the client determined, or the zero Namespace if
 // it couldn't.
 func (c *Client) Namespace() models.Namespace {
-	return c.user.ns
+	return c.poll.ns
 }
 
 func (c *Client) emit(e Event) {
 	if c.onEvent != nil {
 		c.onEvent(e)
-	}
-}
-
-// reportSetting logs a change to one of the client's own settings. They
-// aren't the program's values, so the program isn't sent value events for
-// them; rejections are logged where they happen.
-func (c *Client) reportSetting(e Event) {
-	if e.Kind == EventValueChanged {
-		c.self.logger.Info("Client setting changed", "item", e.Item.Name, "value", e.Value)
 	}
 }
 
@@ -206,11 +145,17 @@ func (realClock) Now() time.Time { return time.Now() }
 
 func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
-// Option configures Start. The defaults suit production; the options exist
-// mostly so tests can place a client in a controlled world.
+// Option configures Start or NewRuntime. The defaults suit production; the
+// options exist mostly so tests can place a client in a controlled world.
+//
+// WithEventHandler and WithRuntime are about one Config. The rest are about
+// the process, so they configure the Runtime: the one NewRuntime makes, or
+// the process's own, made by the first Start not given WithRuntime. Start
+// ignores them otherwise.
 type Option func(*options)
 
 type options struct {
+	runtime   *Runtime
 	openStore func(ctx context.Context, endpoint string) (models.ObjectReader, error)
 	clock     models.Clock
 	logger    *slog.Logger
@@ -233,9 +178,16 @@ func newOptions(opts []Option) options {
 	return o
 }
 
+// WithRuntime makes the Config share rt rather than the process's own
+// Runtime, as a test standing in for several processes does.
+func WithRuntime(rt *Runtime) Option {
+	return func(o *options) { o.runtime = rt }
+}
+
 // WithObjectStores sets how the client opens the object storage at an
-// endpoint, as named by its settings ("" for the default endpoint). The
-// default opens S3 from the standard AWS environment variables.
+// endpoint, as named by the MimirClient Config ("" for the default
+// endpoint). The default opens S3 from the standard AWS environment
+// variables.
 func WithObjectStores(open func(ctx context.Context, endpoint string) (models.ObjectReader, error)) Option {
 	return func(o *options) { o.openStore = open }
 }

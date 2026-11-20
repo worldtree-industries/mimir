@@ -73,10 +73,9 @@ func (l location) String() string {
 	return fmt.Sprintf("bucket prefix %q at %s", l.prefix, endpoint)
 }
 
-// settings are the current values of MimirClient's Items. Its setters run
-// in the polling goroutine, while Registration reads the server URL from its
-// own, so it is guarded.
-type settings struct {
+// mimirClientValues are the current values of MimirClient's Items. Its
+// setters run in the Runtime's loop, and also at boot, so it is guarded.
+type mimirClientValues struct {
 	mu           sync.Mutex
 	pollInterval time.Duration
 	serverURL    string
@@ -84,7 +83,7 @@ type settings struct {
 }
 
 // definition is MimirClient as a Definition whose setters fill s.
-func (s *settings) definition() Definition {
+func (s *mimirClientValues) definition() Definition {
 	return Definition{
 		Config:      MimirClientConfig,
 		DisplayName: mimirClientDisplayName,
@@ -139,7 +138,7 @@ func envVar(item string) string {
 	return ""
 }
 
-func (s *settings) setPollInterval(value string) error {
+func (s *mimirClientValues) setPollInterval(value string) error {
 	d, err := time.ParseDuration(value)
 	if err != nil || d < minPollInterval {
 		return errPollInterval
@@ -152,7 +151,7 @@ func (s *settings) setPollInterval(value string) error {
 	return nil
 }
 
-func (s *settings) setServerURL(value string) error {
+func (s *mimirClientValues) setServerURL(value string) error {
 	if err := checkURL(value); err != nil {
 		return fmt.Errorf("server URL: %w", err)
 	}
@@ -164,7 +163,7 @@ func (s *settings) setServerURL(value string) error {
 	return nil
 }
 
-func (s *settings) setEndpoint(value string) error {
+func (s *mimirClientValues) setEndpoint(value string) error {
 	if value != "" {
 		if err := checkURL(value); err != nil {
 			return fmt.Errorf("object storage endpoint: %w", err)
@@ -178,7 +177,7 @@ func (s *settings) setEndpoint(value string) error {
 	return nil
 }
 
-func (s *settings) setBucketPrefix(value string) error {
+func (s *mimirClientValues) setBucketPrefix(value string) error {
 	if err := models.CheckBucketPrefix(value); err != nil {
 		return err
 	}
@@ -199,14 +198,14 @@ func checkURL(value string) error {
 	return nil
 }
 
-func (s *settings) currentPollInterval() time.Duration {
+func (s *mimirClientValues) currentPollInterval() time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	return s.pollInterval
 }
 
-func (s *settings) currentServerURL() string {
+func (s *mimirClientValues) currentServerURL() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -215,7 +214,7 @@ func (s *settings) currentServerURL() string {
 
 // wantedLocation is the location the settings name. The client reads from it
 // only once it has fetched its Snapshots there.
-func (s *settings) wantedLocation() location {
+func (s *mimirClientValues) wantedLocation() location {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

@@ -68,6 +68,8 @@ type Harness struct {
 	deployables []*RunningDeployable
 	replicas    []*Replica
 	endpoints   map[string]*objectstore.Memory
+	// registrations counts the Registrations sent, by Config.
+	registrations map[string]int
 }
 
 // Option configures a Harness.
@@ -194,16 +196,21 @@ type Deployable struct {
 }
 
 // RunningDeployable is a Deployable placed in a Harness, recording what its
-// client does.
+// client does. It is one process: every Config it runs shares one client
+// Runtime.
 type RunningDeployable struct {
 	Deployable
 
 	h          *Harness
+	runtime    *client.Runtime
 	logs       lockedBuffer
 	registered chan error
 	polled     chan error
 
-	mu               sync.Mutex
+	mu sync.Mutex
+	// configs is how many Configs the Deployable runs: one per call to
+	// ClientOptions.
+	configs          int
 	valueEvents      []client.Event
 	locationSwitches []error
 	lastPollErr      error
@@ -221,6 +228,8 @@ func (h *Harness) NewDeployable(t *testing.T, d Deployable) *RunningDeployable {
 		polled:     make(chan error, eventBuffer),
 	}
 
+	running.runtime = client.NewRuntime(t.Context(), running.processOptions()...)
+
 	h.mu.Lock()
 	h.deployables = append(h.deployables, running)
 	h.mu.Unlock()
@@ -228,9 +237,20 @@ func (h *Harness) NewDeployable(t *testing.T, d Deployable) *RunningDeployable {
 	return running
 }
 
-// ClientOptions are the client options that place the Deployable in the
-// harness: its environment, the shared store and clock, and event capture.
+// ClientOptions are the client options that place a Config in the
+// Deployable, with event capture. Call it once for each Config the
+// Deployable runs.
 func (d *RunningDeployable) ClientOptions() []client.Option {
+	d.mu.Lock()
+	d.configs++
+	d.mu.Unlock()
+
+	return []client.Option{client.WithRuntime(d.runtime), client.WithEventHandler(d.record)}
+}
+
+// processOptions place the Deployable's process in the harness: its
+// environment, the shared store and clock, and its log.
+func (d *RunningDeployable) processOptions() []client.Option {
 	serverURL := d.h.URL
 	if d.ServerDown {
 		serverURL = "http://127.0.0.1:1"
@@ -246,7 +266,6 @@ func (d *RunningDeployable) ClientOptions() []client.Option {
 		client.WithGetenv(func(key string) string { return env[key] }),
 		client.WithClock(d.h.Clock),
 		client.WithLogger(log.GetLoggerTo("mimir-client", &d.logs)),
-		client.WithEventHandler(d.record),
 	}
 	if !d.NoObjectStore {
 		opts = append(opts, client.WithObjectStores(d.h.openEndpoint))
@@ -339,14 +358,31 @@ func (h *Harness) NextPollAfter(t *testing.T, interval time.Duration) {
 	h.Clock.Advance(interval)
 
 	for _, d := range deployables {
-		err := await(t, d.polled, "poll")
-		if err != nil {
-			t.Logf("poll by %s finished with: %v", d.Name, err)
-		}
+		err := d.awaitPolls(t)
 		d.mu.Lock()
 		d.lastPollErr = err
 		d.mu.Unlock()
 	}
+}
+
+// awaitPolls waits for the poll of each of the Deployable's Configs, and
+// returns their errors joined.
+func (d *RunningDeployable) awaitPolls(t *testing.T) error {
+	t.Helper()
+
+	d.mu.Lock()
+	configs := d.configs
+	d.mu.Unlock()
+
+	var errs []error
+	for range configs {
+		if err := await(t, d.polled, "poll"); err != nil {
+			t.Logf("poll by %s finished with: %v", d.Name, err)
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // LastPollError is the error the Deployable's client reported for the poll

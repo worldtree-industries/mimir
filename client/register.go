@@ -27,45 +27,53 @@ const DefaultRegistrationInterval = 24 * time.Hour
 // Registration failed.
 const RegistrationRetryInterval = 5 * time.Minute
 
-// registerEvery registers at once and then again every
-// DefaultRegistrationInterval, or after RegistrationRetryInterval when the
-// last attempt failed, until ctx is done.
-func (c *Client) registerEvery(ctx context.Context) {
-	for {
-		wait := DefaultRegistrationInterval
-		if err := c.register(ctx); err != nil {
-			wait = RegistrationRetryInterval
-		}
+// registerDue registers, at the server URL MimirClient names now, MimirClient
+// and every Config whose Registration is due: each is due when it starts, then
+// DefaultRegistrationInterval after it registered, or RegistrationRetryInterval
+// after an attempt failed. A Registration only falls due between polls, so
+// it lands at the first poll after it is due. Each Config registered is sent
+// one EventRegistered, whose Err joins its own failure with MimirClient's
+// when MimirClient was registered with it. A failure is logged; it never
+// affects the values the program reads.
+func (rt *Runtime) registerDue(ctx context.Context) {
+	now := rt.clock().Now()
 
-		select {
-		case <-ctx.Done():
-			return
-		case <-c.clock.After(wait):
+	var selfErr error
+	if !now.Before(rt.selfDue) {
+		selfErr = rt.register(ctx, rt.self)
+		rt.selfDue = nextRegistration(now, selfErr)
+	}
+
+	for _, c := range rt.live() {
+		if now.Before(c.registrationDue) {
+			continue
 		}
+		err := rt.register(ctx, c.poll)
+		c.registrationDue = nextRegistration(now, err)
+		c.emit(Event{Kind: EventRegistered, Err: errors.Join(selfErr, err)})
 	}
 }
 
-// register tells mimir-server about the Namespace and the Config's Items,
-// and then about MimirClient's, at the server URL the settings name now. A
-// failure is logged and reported, in one EventRegistered for both; it never
-// affects the values the program reads.
-func (c *Client) register(ctx context.Context) error {
-	var errs []error
-	for _, p := range []*configPoll{c.user, c.self} {
-		err := c.sendRegistration(ctx, p)
-		if err != nil {
-			err = fmt.Errorf("register %s: %w", p.def.Config, err)
-			c.logger.ErrorContext(ctx, "Registration failed; values are unaffected", "error", err)
-		}
-		errs = append(errs, err)
+func nextRegistration(now time.Time, err error) time.Time {
+	if err != nil {
+		return now.Add(RegistrationRetryInterval)
 	}
-	err := errors.Join(errs...)
-	c.emit(Event{Kind: EventRegistered, Err: err})
+
+	return now.Add(DefaultRegistrationInterval)
+}
+
+// register sends the Registration of p's Config, logging a failure.
+func (rt *Runtime) register(ctx context.Context, p *configPoll) error {
+	err := rt.sendRegistration(ctx, p)
+	if err != nil {
+		err = fmt.Errorf("register %s: %w", p.def.Config, err)
+		p.logger.ErrorContext(ctx, "Registration failed; values are unaffected", "error", err)
+	}
 
 	return err
 }
 
-func (c *Client) sendRegistration(ctx context.Context, p *configPoll) error {
+func (rt *Runtime) sendRegistration(ctx context.Context, p *configPoll) error {
 	reg := models.Registration{Namespace: p.ns, DisplayName: p.def.DisplayName}
 	for _, item := range p.def.Items {
 		reg.Items = append(reg.Items, models.Item{
@@ -80,14 +88,14 @@ func (c *Client) sendRegistration(ctx context.Context, p *configPoll) error {
 	if err != nil {
 		return fmt.Errorf("encode Registration: %w", err)
 	}
-	url := c.settings.currentServerURL() + registrationPath
+	url := rt.values.currentServerURL() + registrationPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build Registration request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.http.Do(req)
+	resp, err := rt.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("send Registration: %w", err)
 	}

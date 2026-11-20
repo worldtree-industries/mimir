@@ -81,6 +81,8 @@ A generated Config's constructor starts the Mimir client, which:
 3. registers the Config's Items with `mimir-server` in the background, and again every 24 hours so what it still declares never expires. A failed Registration is logged, retried after 5 minutes, and never affects the values. Registration doesn't need object storage: a client with none configured, or none it can open, still registers.
 4. polls the Snapshot every poll interval (30 seconds by default) until the constructor's context is done, with conditional GETs, so an unchanged Snapshot costs almost nothing and changes no values.
 
+Every Config in a process shares one client runtime (`client.Runtime`): one Namespace discovery, one `MimirClient` (below), one connection to object storage, and one loop that polls every Config's Snapshot and registers each when due. The first constructor waits at most 5 seconds for its first read; a later one reads its own Snapshot at once only if object storage answered the last read, so a cold start with storage down waits once, not once per Config. Registrations fall due between polls, so each lands at the first poll after it is due.
+
 ### The client's own settings: `MimirClient`
 
 The client's settings are a Config of their own, `MimirClient` (named `github.com/worldtree-industries/mimir/client.MimirClient`), which every client registers and polls alongside its Config, in the same Deployable and Environment. Tune them with Overrides like any other Config. Each starts from an environment variable if it's set, else its Default:

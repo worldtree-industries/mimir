@@ -1,7 +1,10 @@
 package systemtest
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"slices"
 	"testing"
@@ -9,6 +12,7 @@ import (
 
 	"github.com/worldtree-industries/mimir/client"
 	"github.com/worldtree-industries/mimir/internal/server"
+	"github.com/worldtree-industries/mimir/models"
 )
 
 // Day is how far Day moves the clock: the interval of the clients' daily
@@ -16,16 +20,25 @@ import (
 const Day = client.DefaultRegistrationInterval
 
 // waiters is how many calls to the fake clock's After are parked once
-// everything the harness runs is waiting for its next step: each running
-// Deployable's client parks one for its poll and one for its next
-// Registration, and each server parks one for its reconcile and one for its
-// expiry. Anything new that
-// waits on the clock must be added here. The caller holds h.mu.
+// everything the harness runs is waiting for its next step: each Deployable
+// running a Config parks one for its client Runtime's next poll (which also
+// runs any Registration due), and each server parks one for its reconcile
+// and one for its expiry. Anything new that waits on the clock must be added
+// here. The caller holds h.mu.
 func (h *Harness) waiters() int {
-	const perDeployable = 2 // poll, re-Registration
+	const perDeployable = 1 // the Runtime's poll
 	const perServer = 2     // reconcile, expiry
 
-	return perDeployable*len(h.deployables) + perServer*len(h.replicas)
+	running := 0
+	for _, d := range h.deployables {
+		d.mu.Lock()
+		if d.configs > 0 {
+			running++
+		}
+		d.mu.Unlock()
+	}
+
+	return perDeployable*running + perServer*len(h.replicas)
 }
 
 // Advance moves the clock d on, once every client and server is waiting for
@@ -86,9 +99,7 @@ func (h *Harness) Elapse(t *testing.T, d time.Duration) {
 	h.mu.Unlock()
 
 	for _, dep := range deployables {
-		if err := await(t, dep.polled, "poll"); err != nil {
-			t.Logf("poll by %s finished with: %v", dep.Name, err)
-		}
+		_ = dep.awaitPolls(t)
 	}
 	for _, r := range replicas {
 		r.awaitReconcile(t)
@@ -107,11 +118,41 @@ func (h *Harness) Day(t *testing.T) {
 // or stops that. Everything else it serves is unaffected.
 func (h *Harness) RejectRegistrations(reject bool) { h.rejectRegistrations.Store(reject) }
 
-// gateRegistrations is next, except that it rejects Registrations while
-// RejectRegistrations says so.
+// RegistrationsOf counts the Registrations of config the servers have been
+// sent, accepted or not.
+func (h *Harness) RegistrationsOf(config string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return h.registrations[config]
+}
+
+// gateRegistrations is next, except that it counts Registrations and rejects
+// them while RejectRegistrations says so.
 func (h *Harness) gateRegistrations(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if h.rejectRegistrations.Load() && r.URL.Path == "/v1/registrations" {
+		if r.URL.Path != "/v1/registrations" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		var reg models.Registration
+		if json.Unmarshal(body, &reg) == nil {
+			h.mu.Lock()
+			if h.registrations == nil {
+				h.registrations = map[string]int{}
+			}
+			h.registrations[reg.Namespace.Config]++
+			h.mu.Unlock()
+		}
+
+		if h.rejectRegistrations.Load() {
 			http.Error(w, "registrations are rejected", http.StatusServiceUnavailable)
 			return
 		}

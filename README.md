@@ -94,7 +94,19 @@ Values are never read from `mimir-server`, so a program that starts while it is 
   ```
   The Item must be registered. Errors are RFC 9457 problem documents.
 
-Object storage over the S3 API is not wired up yet, so for now the server keeps Snapshots in memory.
+## Object storage
+
+Snapshots live in S3-API object storage, such as Rook/Ceph RGW. `mimir-server` and every client read the standard AWS environment variables (Mimir never holds credentials, ADR 0005):
+
+| Variable | Meaning |
+| --- | --- |
+| `AWS_ENDPOINT_URL_S3` (or `AWS_ENDPOINT_URL`) | The endpoint, e.g. `http://rook-ceph-rgw-store.rook-ceph.svc`. Leave unset for AWS itself. |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Credentials. |
+| `AWS_REGION` | Region; defaults to `us-east-1`, which Ceph ignores. |
+
+Addressing is path-style, so no wildcard DNS is needed. Without any of these, the server keeps Snapshots in memory only (nothing a client can read) and clients run on Defaults.
+
+Buckets are named `<prefix>-<environment>`; the prefix is `mimir`, so `mimir-dev`, `mimir-prod`. Create them yourself: Mimir doesn't. The server needs read, write and delete on them, and clients read-only.
 
 ## Config file format
 
@@ -128,6 +140,8 @@ Each Config gets a globally unique name derived from its Go package import path 
 ## Testing
 
 `make test` runs everything. The system tests in `internal/systemtest` run `mimir-server` in-process against Postgres: set `DATABASE_URL` to a server where the role may create databases. Each test makes its own database and drops it afterwards. Without `DATABASE_URL` those tests are skipped.
+
+The object storage contract also runs against a real S3-compatible endpoint when `MIMIR_TEST_S3_ENDPOINT` and `MIMIR_TEST_S3_BUCKET` (an existing bucket) are set, with credentials in the standard AWS variables; otherwise that test is skipped.
 
 ## License
 

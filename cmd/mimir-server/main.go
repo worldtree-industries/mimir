@@ -45,13 +45,21 @@ func run(ctx context.Context, lg *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	// TODO(#16): publish to S3-API object storage. Until then Snapshots only
-	// live in this process, so no client can read them.
-	lg.WarnContext(ctx, "No object storage configured; Snapshots are kept in memory only")
+	var store objectstore.Store = objectstore.NewMemory()
+	if objectstore.S3Configured(os.Getenv) {
+		s3, s3Err := objectstore.NewS3FromEnv(ctx, os.Getenv)
+		if s3Err != nil {
+			return fmt.Errorf("configure object storage: %w", s3Err)
+		}
+		store = s3
+	} else {
+		// Snapshots only live in this process, so no client can read them.
+		lg.WarnContext(ctx, "No S3 storage configured; Snapshots are kept in memory only")
+	}
 
 	r, err := server.New(ctx, server.Config{
 		Pool:        pool,
-		ObjectStore: objectstore.NewMemory(),
+		ObjectStore: store,
 		Clock:       clock.Real(),
 		Logger:      lg,
 	})

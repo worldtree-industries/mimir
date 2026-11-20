@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/dfryer1193/mimir/api/config"
+	"github.com/worldtree-industries/mimir/api/config"
 	"github.com/r3labs/sse/v2"
 )
 

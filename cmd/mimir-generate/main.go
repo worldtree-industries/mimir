@@ -10,7 +10,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/dfryer1193/mimir/api/config"
+	"github.com/worldtree-industries/mimir/api/config"
 	"github.com/rs/zerolog/log"
 )
 
@@ -324,8 +324,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/dfryer1193/mimir/api/config"
-	"github.com/dfryer1193/mimir/client"
+	"github.com/worldtree-industries/mimir/api/config"
+	"github.com/worldtree-industries/mimir/client"
 {{- if .NeedsSet}}
 	"github.com/dfryer1193/mjolnir/utils/set"
 {{- end}}

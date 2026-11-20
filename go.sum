@@ -1,12 +1,10 @@
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/dfryer1193/mjolnir v1.2.1 h1:JTHqhnYr+GDuw7ppBZc4C24NVKycnuUzZGegfef3ios=
-github.com/dfryer1193/mjolnir v1.2.1/go.mod h1:ZzUyzMZQyE0skFH2WG4zFljhHxlQFyVcL1X626A5MYI=
-github.com/dfryer1193/mjolnir/utils/set v0.0.0-20250926234814-9cb4c9f21288 h1:Yy0J+X3YGSFtzFlmg6+wT1jIRG35Yq4yEi6lckJA8aY=
-github.com/dfryer1193/mjolnir/utils/set v0.0.0-20250926234814-9cb4c9f21288/go.mod h1:4MIbGkhZwhckb0SwylHZ2usSJ7NJygD8O3zgqycrSe0=
-github.com/go-chi/chi/v5 v5.2.1 h1:KOIHODQj58PmL80G2Eak4WdvUzjSJSm0vG72crDCqb8=
-github.com/go-chi/chi/v5 v5.2.1/go.mod h1:L2yAIGWB3H+phAw1NxKwWM+7eUH/lU8pOMm5hHcoops=
+github.com/dfryer1193/mjolnir v1.8.2 h1:u1b/DmvrYoG7dkIYiuJuoEIucqYKiCWF23cGZ7wu3nw=
+github.com/dfryer1193/mjolnir v1.8.2/go.mod h1:ddMBkUfZz/yRAICDsbTXFlANPgM2STDVqPSR0SH1wpE=
+github.com/go-chi/chi/v5 v5.5.0 h1:xdKQ1dJmVJsmgahrXSKhUx8NyVPzpwdlyrrQFpMPJgg=
+github.com/go-chi/chi/v5 v5.5.0/go.mod h1:d1IG7GtKPSjPyBP365PH8sAGVHk3qfB/IhjFNRH1wWM=
 github.com/godbus/dbus/v5 v5.0.4/go.mod h1:xhWf0FNVPg57R7Z0UbKHbJfkEywrmjJnf7w5xrFpKfA=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=

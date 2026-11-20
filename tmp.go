@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/dfryer1193/mimir/api/config"
-	"github.com/dfryer1193/mimir/client"
+	"github.com/worldtree-industries/mimir/api/config"
+	"github.com/worldtree-industries/mimir/client"
 	"github.com/dfryer1193/mjolnir/utils/set"
 	"github.com/rs/zerolog/log"
 )

@@ -16,7 +16,7 @@ import (
 const DefaultPollInterval = 30 * time.Second
 
 // defaultServerURL is the Default of MimirClient's server URL.
-const defaultServerURL = "http://mimir-server:8080"
+const defaultServerURL = "http://mimir-server.mimir-config.svc.cluster.local"
 
 // startupPollTimeout bounds the first poll, which Start waits for so a
 // program begins on its real values.

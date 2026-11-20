@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/dfryer1193/mjolnir/utils/set"
+	"github.com/worldtree-industries/mimir/client"
 )
 
 // FooConfigName is the globally unique name of the Config, derived
@@ -31,111 +32,182 @@ type FooConfig struct {
 	grault set.Set[int64]
 }
 
-// NewFooConfig returns the Config with every Item at its Default.
-func NewFooConfig(_ context.Context) *FooConfig {
+// NewFooConfig returns the Config with every Item at its Default,
+// or at its Override once the Mimir client has read one. The client keeps the
+// values current in the background until ctx is done.
+func NewFooConfig(ctx context.Context, opts ...client.Option) *FooConfig {
 	cfg := &FooConfig{}
-
-	cfg.setFoo("default")
-	cfg.setBar("55555")
-	cfg.setBaz("true")
-	cfg.setQux("3.14159")
-	cfg.setQuux("[\"default\", \"values\"]")
-	cfg.setQuuz("[1, 1, 2, 3, 5, 8]")
-	cfg.setCorge("[\"default\", \"string\", \"set\"]")
-	cfg.setGrault("[123, 234, 345]")
+	client.Start(ctx, client.Definition{
+		Config:      FooConfigName,
+		DisplayName: FooConfigDisplayName,
+		Items: []client.Item{
+			{
+				Name:        "foo",
+				Type:        "string",
+				Description: "A string",
+				Default:     "default",
+				Set:         cfg.setFoo,
+			},
+			{
+				Name:        "bar",
+				Type:        "int",
+				Description: "An int",
+				Default:     "55555",
+				Set:         cfg.setBar,
+			},
+			{
+				Name:        "baz",
+				Type:        "bool",
+				Description: "A bool",
+				Default:     "true",
+				Set:         cfg.setBaz,
+			},
+			{
+				Name:        "qux",
+				Type:        "float",
+				Description: "A float",
+				Default:     "3.14159",
+				Set:         cfg.setQux,
+			},
+			{
+				Name:        "quux",
+				Type:        "string_array",
+				Description: "An array of strings",
+				Default:     "[\"default\", \"values\"]",
+				Set:         cfg.setQuux,
+			},
+			{
+				Name:        "quuz",
+				Type:        "int_array",
+				Description: "An array of ints",
+				Default:     "[1, 1, 2, 3, 5, 8]",
+				Set:         cfg.setQuuz,
+			},
+			{
+				Name:        "corge",
+				Type:        "string_set",
+				Description: "A set of strings",
+				Default:     "[\"default\", \"string\", \"set\"]",
+				Set:         cfg.setCorge,
+			},
+			{
+				Name:        "grault",
+				Type:        "int_set",
+				Description: "A set of ints",
+				Default:     "[123, 234, 345]",
+				Set:         cfg.setGrault,
+			},
+		},
+	}, opts...)
 
 	return cfg
 }
 
-func (c *FooConfig) setFoo(val string) {
+func (c *FooConfig) setFoo(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	c.foo = val
+
+	return nil
 }
 
-func (c *FooConfig) setBar(val string) {
+func (c *FooConfig) setBar(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	parsed, err := strconv.ParseInt(val, 10, 64)
 	if err != nil {
-		return
+		return err
 	}
 
 	c.bar = parsed
+
+	return nil
 }
 
-func (c *FooConfig) setBaz(val string) {
+func (c *FooConfig) setBaz(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	parsed, err := strconv.ParseBool(val)
 	if err != nil {
-		return
+		return err
 	}
 
 	c.baz = parsed
+
+	return nil
 }
 
-func (c *FooConfig) setQux(val string) {
+func (c *FooConfig) setQux(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	parsed, err := strconv.ParseFloat(val, 64)
 	if err != nil {
-		return
+		return err
 	}
 
 	c.qux = parsed
+
+	return nil
 }
 
-func (c *FooConfig) setQuux(val string) {
+func (c *FooConfig) setQuux(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	tmp := make([]string, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.quux = tmp
+
+	return nil
 }
 
-func (c *FooConfig) setQuuz(val string) {
+func (c *FooConfig) setQuuz(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	tmp := make([]int64, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.quuz = tmp
+
+	return nil
 }
 
-func (c *FooConfig) setCorge(val string) {
+func (c *FooConfig) setCorge(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	tmp := make([]string, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.corge = set.New(tmp...)
+
+	return nil
 }
 
-func (c *FooConfig) setGrault(val string) {
+func (c *FooConfig) setGrault(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	tmp := make([]int64, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.grault = set.New(tmp...)
+
+	return nil
 }
 
 // GetFoo returns the value of foo.

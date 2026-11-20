@@ -222,10 +222,10 @@ import (
 {{- end}}
 	"strconv"
 	"sync"
-{{- if .NeedsSet}}
-
+{{if .NeedsSet}}
 	"github.com/dfryer1193/mjolnir/utils/set"
 {{- end}}
+	"github.com/worldtree-industries/mimir/client"
 )
 
 // {{.ConfigTypeName}}Name is the globally unique name of the Config, derived
@@ -244,17 +244,31 @@ type {{.ConfigTypeName}} struct {
 {{- end}}
 }
 
-// New{{.ConfigTypeName}} returns the Config with every Item at its Default.
-func New{{.ConfigTypeName}}(_ context.Context) *{{.ConfigTypeName}} {
+// New{{.ConfigTypeName}} returns the Config with every Item at its Default,
+// or at its Override once the Mimir client has read one. The client keeps the
+// values current in the background until ctx is done.
+func New{{.ConfigTypeName}}(ctx context.Context, opts ...client.Option) *{{.ConfigTypeName}} {
 	cfg := &{{.ConfigTypeName}}{}
-{{range .Items}}
-	cfg.{{setterName .Name}}("{{escapeValue .Value}}")
+	client.Start(ctx, client.Definition{
+		Config:      {{.ConfigTypeName}}Name,
+		DisplayName: {{.ConfigTypeName}}DisplayName,
+		Items: []client.Item{
+{{- range .Items}}
+			{
+				Name:        {{printf "%q" .Name}},
+				Type:        {{printf "%q" .Type}},
+				Description: {{printf "%q" .Description}},
+				Default:     {{printf "%q" .Value}},
+				Set:         cfg.{{setterName .Name}},
+			},
 {{- end}}
+		},
+	}, opts...)
 
 	return cfg
 }
 {{range .Items}}
-func (c *{{$.ConfigTypeName}}) {{setterName .Name}}(val string) {
+func (c *{{$.ConfigTypeName}}) {{setterName .Name}}(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 {{if eq .Type "string"}}
@@ -262,25 +276,27 @@ func (c *{{$.ConfigTypeName}}) {{setterName .Name}}(val string) {
 {{- else if isArray .Type}}
 	tmp := make([]{{elemType .Type}}, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.{{.Name}} = tmp
 {{- else if isSet .Type}}
 	tmp := make([]{{elemType .Type}}, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.{{.Name}} = set.New(tmp...)
 {{- else}}
 	parsed, err := {{parseFunc .Type}}
 	if err != nil {
-		return
+		return err
 	}
 
 	c.{{.Name}} = parsed
 {{- end}}
+
+	return nil
 }
 {{end}}
 {{range .Items}}

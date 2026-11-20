@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/dfryer1193/mjolnir/utils/set"
+	"github.com/worldtree-industries/mimir/client"
 )
 
 // AllTypesConfigName is the globally unique name of the Config, derived
@@ -35,163 +36,266 @@ type AllTypesConfig struct {
 	f_set set.Set[float64]
 }
 
-// NewAllTypesConfig returns the Config with every Item at its Default.
-func NewAllTypesConfig(_ context.Context) *AllTypesConfig {
+// NewAllTypesConfig returns the Config with every Item at its Default,
+// or at its Override once the Mimir client has read one. The client keeps the
+// values current in the background until ctx is done.
+func NewAllTypesConfig(ctx context.Context, opts ...client.Option) *AllTypesConfig {
 	cfg := &AllTypesConfig{}
-
-	cfg.setS("hi")
-	cfg.setI("-7")
-	cfg.setB("true")
-	cfg.setF("2.5")
-	cfg.setSArr("[\"a\", \"b\", \"a\"]")
-	cfg.setIArr("[3, 1, 3]")
-	cfg.setBArr("[true, false, true]")
-	cfg.setFArr("[1.5, 2.5]")
-	cfg.setSSet("[\"a\", \"b\", \"a\"]")
-	cfg.setISet("[3, 1, 3]")
-	cfg.setBSet("[true, false, true]")
-	cfg.setFSet("[1.5, 1.5]")
+	client.Start(ctx, client.Definition{
+		Config:      AllTypesConfigName,
+		DisplayName: AllTypesConfigDisplayName,
+		Items: []client.Item{
+			{
+				Name:        "s",
+				Type:        "string",
+				Description: "A string",
+				Default:     "hi",
+				Set:         cfg.setS,
+			},
+			{
+				Name:        "i",
+				Type:        "int",
+				Description: "An int",
+				Default:     "-7",
+				Set:         cfg.setI,
+			},
+			{
+				Name:        "b",
+				Type:        "bool",
+				Description: "A bool",
+				Default:     "true",
+				Set:         cfg.setB,
+			},
+			{
+				Name:        "f",
+				Type:        "float",
+				Description: "A float",
+				Default:     "2.5",
+				Set:         cfg.setF,
+			},
+			{
+				Name:        "s_arr",
+				Type:        "string_array",
+				Description: "Strings",
+				Default:     "[\"a\", \"b\", \"a\"]",
+				Set:         cfg.setSArr,
+			},
+			{
+				Name:        "i_arr",
+				Type:        "int_array",
+				Description: "Ints",
+				Default:     "[3, 1, 3]",
+				Set:         cfg.setIArr,
+			},
+			{
+				Name:        "b_arr",
+				Type:        "bool_array",
+				Description: "Bools",
+				Default:     "[true, false, true]",
+				Set:         cfg.setBArr,
+			},
+			{
+				Name:        "f_arr",
+				Type:        "float_array",
+				Description: "Floats",
+				Default:     "[1.5, 2.5]",
+				Set:         cfg.setFArr,
+			},
+			{
+				Name:        "s_set",
+				Type:        "string_set",
+				Description: "String set",
+				Default:     "[\"a\", \"b\", \"a\"]",
+				Set:         cfg.setSSet,
+			},
+			{
+				Name:        "i_set",
+				Type:        "int_set",
+				Description: "Int set",
+				Default:     "[3, 1, 3]",
+				Set:         cfg.setISet,
+			},
+			{
+				Name:        "b_set",
+				Type:        "bool_set",
+				Description: "Bool set",
+				Default:     "[true, false, true]",
+				Set:         cfg.setBSet,
+			},
+			{
+				Name:        "f_set",
+				Type:        "float_set",
+				Description: "Float set",
+				Default:     "[1.5, 1.5]",
+				Set:         cfg.setFSet,
+			},
+		},
+	}, opts...)
 
 	return cfg
 }
 
-func (c *AllTypesConfig) setS(val string) {
+func (c *AllTypesConfig) setS(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	c.s = val
+
+	return nil
 }
 
-func (c *AllTypesConfig) setI(val string) {
+func (c *AllTypesConfig) setI(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	parsed, err := strconv.ParseInt(val, 10, 64)
 	if err != nil {
-		return
+		return err
 	}
 
 	c.i = parsed
+
+	return nil
 }
 
-func (c *AllTypesConfig) setB(val string) {
+func (c *AllTypesConfig) setB(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	parsed, err := strconv.ParseBool(val)
 	if err != nil {
-		return
+		return err
 	}
 
 	c.b = parsed
+
+	return nil
 }
 
-func (c *AllTypesConfig) setF(val string) {
+func (c *AllTypesConfig) setF(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	parsed, err := strconv.ParseFloat(val, 64)
 	if err != nil {
-		return
+		return err
 	}
 
 	c.f = parsed
+
+	return nil
 }
 
-func (c *AllTypesConfig) setSArr(val string) {
+func (c *AllTypesConfig) setSArr(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	tmp := make([]string, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.s_arr = tmp
+
+	return nil
 }
 
-func (c *AllTypesConfig) setIArr(val string) {
+func (c *AllTypesConfig) setIArr(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	tmp := make([]int64, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.i_arr = tmp
+
+	return nil
 }
 
-func (c *AllTypesConfig) setBArr(val string) {
+func (c *AllTypesConfig) setBArr(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	tmp := make([]bool, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.b_arr = tmp
+
+	return nil
 }
 
-func (c *AllTypesConfig) setFArr(val string) {
+func (c *AllTypesConfig) setFArr(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	tmp := make([]float64, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.f_arr = tmp
+
+	return nil
 }
 
-func (c *AllTypesConfig) setSSet(val string) {
+func (c *AllTypesConfig) setSSet(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	tmp := make([]string, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.s_set = set.New(tmp...)
+
+	return nil
 }
 
-func (c *AllTypesConfig) setISet(val string) {
+func (c *AllTypesConfig) setISet(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	tmp := make([]int64, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.i_set = set.New(tmp...)
+
+	return nil
 }
 
-func (c *AllTypesConfig) setBSet(val string) {
+func (c *AllTypesConfig) setBSet(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	tmp := make([]bool, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.b_set = set.New(tmp...)
+
+	return nil
 }
 
-func (c *AllTypesConfig) setFSet(val string) {
+func (c *AllTypesConfig) setFSet(val string) error {
 	c.rwMux.Lock()
 	defer c.rwMux.Unlock()
 
 	tmp := make([]float64, 0)
 	if err := json.Unmarshal([]byte(val), &tmp); err != nil {
-		return
+		return err
 	}
 
 	c.f_set = set.New(tmp...)
+
+	return nil
 }
 
 // GetS returns the value of s.

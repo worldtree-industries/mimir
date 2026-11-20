@@ -34,4 +34,4 @@ go.work.sum
 # Generated binaries
 /mimir-generate
 /bin/
-/logs/
+logs/

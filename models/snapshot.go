@@ -17,7 +17,7 @@ type Snapshot struct {
 
 // SnapshotValue is one Item's effective Override in a Snapshot.
 type SnapshotValue struct {
-	Item  ItemKey `json:"item"`
+	Item  ItemRef `json:"item"`
 	Value string  `json:"value"`
 }
 
@@ -36,7 +36,7 @@ func NewSnapshot(values []SnapshotValue) Snapshot {
 }
 
 // Value returns the Override value the Snapshot holds for key, if any.
-func (s Snapshot) Value(key ItemKey) (string, bool) {
+func (s Snapshot) Value(key ItemRef) (string, bool) {
 	for _, v := range s.Values {
 		if v.Item == key {
 			return v.Value, true

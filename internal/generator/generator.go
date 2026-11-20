@@ -21,10 +21,31 @@ type Item struct {
 }
 
 // File is the contents of a config file: one Config and its Items.
+// TypeName is the Go type name of the generated Config.
 type File struct {
-	Namespace   string `json:"namespace"`
+	TypeName    string `json:"type_name"`
 	DisplayName string `json:"display_name"`
 	Items       []Item `json:"items"`
+}
+
+// UnmarshalJSON reads a config file. It also accepts "namespace", the old
+// name of "type_name".
+func (f *File) UnmarshalJSON(data []byte) error {
+	type file File
+	var withOldKey struct {
+		file
+
+		Namespace string `json:"namespace"`
+	}
+	if err := json.Unmarshal(data, &withOldKey); err != nil {
+		return err
+	}
+	*f = File(withOldKey.file)
+	if f.TypeName == "" {
+		f.TypeName = withOldKey.Namespace
+	}
+
+	return nil
 }
 
 type templateData struct {
@@ -70,10 +91,10 @@ func Generate(input []byte, packageName, importPath string) ([]byte, error) {
 	}
 
 	data := templateData{
-		ConfigName:     ConfigName(importPath, cfg.Namespace),
+		ConfigName:     ConfigName(importPath, cfg.TypeName),
 		DisplayName:    cfg.DisplayName,
 		PackageName:    packageName,
-		ConfigTypeName: cfg.Namespace,
+		ConfigTypeName: cfg.TypeName,
 		Items:          cfg.Items,
 	}
 	for _, item := range cfg.Items {
@@ -252,7 +273,7 @@ func New{{.ConfigTypeName}}(ctx context.Context, opts ...client.Option) *{{.Conf
 	client.Start(ctx, client.Definition{
 		Config:      {{.ConfigTypeName}}Name,
 		DisplayName: {{.ConfigTypeName}}DisplayName,
-		Items: []client.Item{
+		Items: []client.ItemDefinition{
 {{- range .Items}}
 			{
 				Name:        {{printf "%q" .Name}},

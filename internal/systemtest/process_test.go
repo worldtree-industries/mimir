@@ -24,7 +24,7 @@ var allTypesConsumerDev = models.Namespace{
 // Item set to value.
 func allTypesSnapshot(value string) models.Snapshot {
 	return models.NewSnapshot([]models.SnapshotValue{
-		{Item: models.ItemKey{Name: "s", Type: models.TypeString}, Value: value},
+		{Item: models.ItemRef{Name: "s", Type: models.TypeString}, Value: value},
 	})
 }
 

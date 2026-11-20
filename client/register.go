@@ -80,7 +80,7 @@ func (rt *Runtime) sendRegistration(ctx context.Context, p *configPoll) error {
 			Name:        item.Name,
 			Description: item.Description,
 			Type:        item.Type,
-			Value:       item.Default,
+			Default:     item.Default,
 		})
 	}
 

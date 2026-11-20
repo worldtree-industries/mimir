@@ -11,7 +11,7 @@ import (
 )
 
 // NewEndpoint adds object storage that clients reach at endpoint when their
-// settings name it, as another object storage service would be. h.Store is
+// MimirClient Config names it, as another object storage service would be. h.Store is
 // at the default endpoint, "". Any endpoint not added can't be reached.
 func (h *Harness) NewEndpoint(endpoint string) *objectstore.Memory {
 	store := objectstore.NewMemory()

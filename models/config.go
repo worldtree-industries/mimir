@@ -19,16 +19,17 @@ const (
 	TypeFloatSet    Type = "float_set"
 )
 
-// Item is one value in a Config. Value holds its Default.
+// Item is one value in a Config, with its Default.
 type Item struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Type        Type   `json:"type"`
-	Value       string `json:"value"`
+	Default     string `json:"default"`
 }
 
-// Config is a named, typed set of Items.
+// Config is a named, typed set of Items. TypeName is the Go type name of
+// the generated Config.
 type Config struct {
-	Namespace string `json:"namespace"`
-	Items     []Item `json:"items"`
+	TypeName string `json:"type_name"`
+	Items    []Item `json:"items"`
 }

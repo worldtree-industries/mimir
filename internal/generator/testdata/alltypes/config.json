@@ -1,5 +1,5 @@
 {
-  "namespace": "AllTypesConfig",
+  "type_name": "AllTypesConfig",
   "display_name": "Every type",
   "items": [
     {"name": "s", "description": "A string", "type": "string", "value": "hi"},

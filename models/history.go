@@ -25,7 +25,7 @@ type HistoryEntry struct {
 	Time     time.Time     `json:"time"`
 	Action   HistoryAction `json:"action"`
 	Scope    Scope         `json:"scope"`
-	Item     ItemKey       `json:"item"`
+	Item     ItemRef       `json:"item"`
 	OldValue *string       `json:"old_value"`
 	NewValue *string       `json:"new_value"`
 	Caller   string        `json:"caller"`

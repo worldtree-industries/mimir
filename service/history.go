@@ -29,7 +29,7 @@ func callerFrom(ctx context.Context) string {
 // transaction as the write, so a change and its history stand or fall
 // together. Other writers, such as expiry, record with their own caller.
 func (s *Service) recordHistory(
-	ctx context.Context, action models.HistoryAction, scope models.Scope, item models.ItemKey,
+	ctx context.Context, action models.HistoryAction, scope models.Scope, item models.ItemRef,
 	oldValue, newValue *string,
 ) error {
 	_, err := s.store.AppendHistory(ctx, models.HistoryEntry{

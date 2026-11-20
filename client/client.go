@@ -30,11 +30,12 @@ type Definition struct {
 	DisplayName string
 	// Items are the Config's Items, each with the setter that applies values
 	// to it.
-	Items []Item
+	Items []ItemDefinition
 }
 
-// Item is one Item of a Definition.
-type Item struct {
+// ItemDefinition is one Item of a Definition, as the generated code declares
+// it, with the setter that applies its values.
+type ItemDefinition struct {
 	Name        string
 	Type        models.Type
 	Description string
@@ -58,7 +59,7 @@ const (
 	EventValueChanged EventKind = "value_changed"
 	// EventLocationSwitch is a finished attempt to read Snapshots from a new
 	// location (object storage endpoint or bucket prefix) named by the
-	// client's settings. Err is set when it failed and the client kept its
+	// MimirClient Config. Err is set when it failed and the client kept its
 	// current location; it tries again at the next poll.
 	EventLocationSwitch EventKind = "location_switch"
 	// EventValueRejected is a value that doesn't parse as its Item's type:
@@ -73,7 +74,7 @@ const (
 type Event struct {
 	Kind  EventKind
 	Err   error
-	Item  models.ItemKey
+	Item  models.ItemRef
 	Value string
 }
 

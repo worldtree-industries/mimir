@@ -18,7 +18,7 @@ func shopDevNamespace() models.Namespace {
 }
 
 func shopItem(name string, typ models.Type, value string) models.Item {
-	return models.Item{Name: name, Type: typ, Description: name + " item", Value: value}
+	return models.Item{Name: name, Type: typ, Description: name + " item", Default: value}
 }
 
 // shopRegistration is a version of checkout, in dev, declaring items.
@@ -29,19 +29,19 @@ func shopRegistration(items ...models.Item) models.Registration {
 func shopOverride(item string, typ models.Type, value string) models.Override {
 	return models.Override{
 		Scope: models.Scope{Config: shopConfig},
-		Item:  models.ItemKey{Name: item, Type: typ},
+		Item:  models.ItemRef{Name: item, Type: typ},
 		Value: value,
 	}
 }
 
-// itemKeys is the names and types of the Items the server knows of the shop
+// itemRefs is the names and types of the Items the server knows of the shop
 // Config.
-func itemKeys(t *testing.T, h *systemtest.Harness) []models.ItemKey {
+func itemRefs(t *testing.T, h *systemtest.Harness) []models.ItemRef {
 	t.Helper()
 
-	var keys []models.ItemKey
+	var keys []models.ItemRef
 	for _, item := range h.Items(t, shopConfig) {
-		keys = append(keys, item.ItemKey)
+		keys = append(keys, item.ItemRef)
 	}
 
 	return keys
@@ -58,15 +58,15 @@ func TestRegisteringAVersionThatDropsAnItemLeavesItAndItsOverrides(t *testing.T)
 	// The next version no longer declares banner.
 	h.Register(t, shopRegistration(shopItem("timeout", models.TypeInt, "30")))
 
-	want := []models.ItemKey{
+	want := []models.ItemRef{
 		{Name: "banner", Type: models.TypeString},
 		{Name: "timeout", Type: models.TypeInt},
 	}
-	if got := itemKeys(t, h); !slices.Equal(got, want) {
+	if got := itemRefs(t, h); !slices.Equal(got, want) {
 		t.Errorf("Items after the dropping version registered = %v, want %v", got, want)
 	}
 	snap, _ := h.Snapshot(t, shopDevNamespace())
-	if got, ok := snap.Value(models.ItemKey{Name: "banner", Type: models.TypeString}); !ok || got != "sale" {
+	if got, ok := snap.Value(models.ItemRef{Name: "banner", Type: models.TypeString}); !ok || got != "sale" {
 		t.Errorf("Snapshot value of banner = %q (present %t), want the Override %q kept", got, ok, "sale")
 	}
 	if entries := h.History(t, models.Scope{Config: shopConfig}); len(entries) != 1 {
@@ -81,11 +81,11 @@ func TestAnItemWhoseTypeChangedRegistersAsANewItem(t *testing.T) {
 
 	h.Register(t, shopRegistration(shopItem("limit", models.TypeString, "five")))
 
-	want := []models.ItemKey{
+	want := []models.ItemRef{
 		{Name: "limit", Type: models.TypeInt},
 		{Name: "limit", Type: models.TypeString},
 	}
-	if got := itemKeys(t, h); !slices.Equal(got, want) {
+	if got := itemRefs(t, h); !slices.Equal(got, want) {
 		t.Errorf("Items after the type changed = %v, want both %v", got, want)
 	}
 

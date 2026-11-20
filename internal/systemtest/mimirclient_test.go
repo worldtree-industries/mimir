@@ -20,7 +20,7 @@ var mimirClientDev = models.Namespace{Config: client.MimirClientConfig, Deployab
 
 // fooSnapshot is a Snapshot of foo's Config with foo set to value.
 func fooSnapshot(value string) models.Snapshot {
-	return models.NewSnapshot([]models.SnapshotValue{{Item: fooKey, Value: value}})
+	return models.NewSnapshot([]models.SnapshotValue{{Item: fooRef, Value: value}})
 }
 
 // recordGets records the bucket of every Get from h.Store until the returned
@@ -43,12 +43,12 @@ func recordGets(h *systemtest.Harness) func() []string {
 	}
 }
 
-// clientSetting is a Config-wide Override of one of MimirClient's Items, all
+// mimirClientOverride is a Config-wide Override of one of MimirClient's Items, all
 // of which are strings.
-func clientSetting(item, value string) models.Override {
+func mimirClientOverride(item, value string) models.Override {
 	return models.Override{
 		Scope: models.Scope{Config: client.MimirClientConfig},
-		Item:  models.ItemKey{Name: item, Type: models.TypeString},
+		Item:  models.ItemRef{Name: item, Type: models.TypeString},
 		Value: value,
 	}
 }
@@ -57,7 +57,7 @@ func TestPollIntervalOverrideTakesEffectLive(t *testing.T) {
 	h := systemtest.New(t)
 	cfg, _ := startFooConsumer(t, h)
 
-	h.CreateOverride(t, clientSetting(client.PollIntervalItem, "10s"))
+	h.CreateOverride(t, mimirClientOverride(client.PollIntervalItem, "10s"))
 	h.NextPoll(t)
 
 	// The next poll comes 10s on, not the Default 30s.
@@ -75,7 +75,7 @@ func TestBucketPrefixOverrideIsAdoptedOnceSnapshotsAreReadThere(t *testing.T) {
 
 	// The Snapshots are mirrored to buckets with a new prefix, where foo
 	// differs so the test can tell which location values come from.
-	h.CreateOverride(t, clientSetting(client.BucketPrefixItem, "mimir-next"))
+	h.CreateOverride(t, mimirClientOverride(client.BucketPrefixItem, "mimir-next"))
 	h.CopySnapshot(t, mimirClientDev, h.Store, "mimir-next")
 	h.PutSnapshotAt(t, h.Store, "mimir-next", fooConsumerDev, fooSnapshot("moved"))
 	h.NextPoll(t)
@@ -99,7 +99,7 @@ func TestEndpointOverrideIsAdoptedOnceSnapshotsAreReadThere(t *testing.T) {
 	cfg, d := startFooConsumer(t, h)
 
 	other := h.NewEndpoint("https://objects.example")
-	h.CreateOverride(t, clientSetting(client.ObjectStoreEndpointItem, "https://objects.example"))
+	h.CreateOverride(t, mimirClientOverride(client.ObjectStoreEndpointItem, "https://objects.example"))
 	h.CopySnapshot(t, mimirClientDev, other, models.DefaultBucketPrefix)
 	h.PutSnapshotAt(t, other, models.DefaultBucketPrefix, fooConsumerDev, fooSnapshot("moved"))
 	h.NextPoll(t)
@@ -120,15 +120,15 @@ func TestEndpointOverrideIsAdoptedOnceSnapshotsAreReadThere(t *testing.T) {
 
 func TestUnreachableLocationNeverStrandsTheClient(t *testing.T) {
 	cases := map[string]struct {
-		setting models.Override
+		override models.Override
 		// fault makes the new location fail; nil leaves it unreachable.
 		fault func(h *systemtest.Harness)
 	}{
 		"endpoint that can't be reached": {
-			setting: clientSetting(client.ObjectStoreEndpointItem, "https://nowhere.example"),
+			override: mimirClientOverride(client.ObjectStoreEndpointItem, "https://nowhere.example"),
 		},
 		"bucket that can't be read": {
-			setting: clientSetting(client.BucketPrefixItem, "broken"),
+			override: mimirClientOverride(client.BucketPrefixItem, "broken"),
 			fault: func(h *systemtest.Harness) {
 				h.Store.SetGetFault(func(bucket, _, _ string) error {
 					if bucket == "broken-dev" {
@@ -140,13 +140,13 @@ func TestUnreachableLocationNeverStrandsTheClient(t *testing.T) {
 		},
 	}
 	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) { checkLocationNeverStrands(t, tc.setting, tc.fault) })
+		t.Run(name, func(t *testing.T) { checkLocationNeverStrands(t, tc.override, tc.fault) })
 	}
 }
 
 // checkLocationNeverStrands moves a client to a location that fails, with
-// setting and fault, and checks it keeps reading the old one until fixed.
-func checkLocationNeverStrands(t *testing.T, setting models.Override, fault func(h *systemtest.Harness)) {
+// override and fault, and checks it keeps reading the old one until fixed.
+func checkLocationNeverStrands(t *testing.T, override models.Override, fault func(h *systemtest.Harness)) {
 	t.Helper()
 
 	h := systemtest.New(t)
@@ -155,7 +155,7 @@ func checkLocationNeverStrands(t *testing.T, setting models.Override, fault func
 		fault(h)
 	}
 
-	h.CreateOverride(t, setting)
+	h.CreateOverride(t, override)
 	h.CreateOverride(t, fooOverride("tuned"))
 	h.NextPoll(t)
 
@@ -170,7 +170,7 @@ func checkLocationNeverStrands(t *testing.T, setting models.Override, fault func
 	}
 
 	// The client keeps trying, and keeps reading the old location,
-	// where the fix arrives: the setting goes back to its Default.
+	// where the fix arrives: the MimirClient Item goes back to its Default.
 	h.PutSnapshot(t, mimirClientDev, models.NewSnapshot(nil))
 	h.PutSnapshot(t, fooConsumerDev, fooSnapshot("fixed"))
 	h.NextPoll(t)
@@ -184,7 +184,7 @@ func checkLocationNeverStrands(t *testing.T, setting models.Override, fault func
 	}
 }
 
-func TestClientSettingsStartFromEnvironmentVariables(t *testing.T) {
+func TestMimirClientStartsFromEnvironmentVariables(t *testing.T) {
 	h := systemtest.New(t)
 	other := h.NewEndpoint("https://objects.example")
 	h.PutSnapshotAt(t, other, "custom", fooConsumerDev, fooSnapshot("from-env-location"))
@@ -209,7 +209,7 @@ func TestClientSettingsStartFromEnvironmentVariables(t *testing.T) {
 	}
 }
 
-func TestBadClientSettingIsLoggedAndTheLastGoodOneKept(t *testing.T) {
+func TestBadMimirClientValueIsLoggedAndTheLastGoodOneKept(t *testing.T) {
 	h := systemtest.New(t)
 	d := h.NewDeployable(t, systemtest.Deployable{
 		Name:        "foo-consumer",
@@ -226,7 +226,7 @@ func TestBadClientSettingIsLoggedAndTheLastGoodOneKept(t *testing.T) {
 
 	// mimir-server accepts any string, but the client rejects a value that
 	// isn't a usable interval and keeps polling at the Default.
-	h.CreateOverride(t, clientSetting(client.PollIntervalItem, "0s"))
+	h.CreateOverride(t, mimirClientOverride(client.PollIntervalItem, "0s"))
 	h.NextPoll(t)
 	h.CreateOverride(t, fooOverride("tuned"))
 	h.NextPoll(t)
@@ -240,14 +240,14 @@ func TestBadClientSettingIsLoggedAndTheLastGoodOneKept(t *testing.T) {
 	if got := d.TakeValueEvents(); slices.ContainsFunc(got, func(e client.Event) bool {
 		return e.Item.Name == client.PollIntervalItem
 	}) {
-		t.Errorf("the program was sent value events for the client's own settings: %+v", got)
+		t.Errorf("the program was sent value events for the MimirClient Config: %+v", got)
 	}
 }
 
 func TestRestartBeginsAgainFromTheStartingLocation(t *testing.T) {
 	h := systemtest.New(t)
 	_, first := startFooConsumer(t, h)
-	h.CreateOverride(t, clientSetting(client.BucketPrefixItem, "mimir-next"))
+	h.CreateOverride(t, mimirClientOverride(client.BucketPrefixItem, "mimir-next"))
 	h.CopySnapshot(t, mimirClientDev, h.Store, "mimir-next")
 	h.PutSnapshotAt(t, h.Store, "mimir-next", fooConsumerDev, fooSnapshot("moved"))
 	h.NextPoll(t)
@@ -291,7 +291,7 @@ func TestServerURLOverrideTakesEffectLive(t *testing.T) {
 	}
 
 	// The fix arrives as an Override, and the next attempt uses it.
-	h.CreateOverride(t, clientSetting(client.ServerURLItem, h.URL))
+	h.CreateOverride(t, mimirClientOverride(client.ServerURLItem, h.URL))
 	h.NextPoll(t)
 	h.Advance(t, client.RegistrationRetryInterval)
 	if err := d.AwaitRegistration(t); err != nil {
@@ -316,7 +316,7 @@ func TestBadBucketPrefixOverrideNeverStrandsOrFlaps(t *testing.T) {
 			cfg, d := startFooConsumer(t, h)
 			setUp(h)
 			h.CreateOverride(t, fooOverride("tuned"))
-			h.CreateOverride(t, clientSetting(client.BucketPrefixItem, "nowhere"))
+			h.CreateOverride(t, mimirClientOverride(client.BucketPrefixItem, "nowhere"))
 
 			for poll := range 3 {
 				h.NextPoll(t)

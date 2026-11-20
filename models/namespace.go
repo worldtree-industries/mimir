@@ -8,21 +8,21 @@ type Namespace struct {
 	Environment string `json:"environment"`
 }
 
-// ItemKey identifies an Item within a Config: its name and type together.
+// ItemRef identifies an Item within a Config: its name and type together.
 // Changing an Item's type makes it a different Item (ADR 0004).
-type ItemKey struct {
+type ItemRef struct {
 	Name string `json:"name"`
 	Type Type   `json:"type"`
 }
 
-// Key returns the Item's identity.
-func (i Item) Key() ItemKey {
-	return ItemKey{Name: i.Name, Type: i.Type}
+// Ref returns the Item's identity.
+func (i Item) Ref() ItemRef {
+	return ItemRef{Name: i.Name, Type: i.Type}
 }
 
 // Registration is a running Deployable telling Mimir which Items a Config it
-// reads declares, in the Namespace it runs in. Each Item's Value is its
-// Default. DisplayName is the Config's optional short display name.
+// reads declares, in the Namespace it runs in, each with its Default.
+// DisplayName is the Config's optional short display name.
 type Registration struct {
 	Namespace   Namespace `json:"namespace"`
 	DisplayName string    `json:"display_name,omitempty"`

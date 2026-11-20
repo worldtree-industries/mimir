@@ -47,7 +47,7 @@ func TestSnapshotHoldsOnlyItemsWithAnOverride(t *testing.T) {
 		t,
 		models.Namespace{Config: foo.FooConfigName, Deployable: "foo-consumer", Environment: "dev"},
 	)
-	want := []models.SnapshotValue{{Item: models.ItemKey{Name: "foo", Type: models.TypeString}, Value: "tuned"}}
+	want := []models.SnapshotValue{{Item: models.ItemRef{Name: "foo", Type: models.TypeString}, Value: "tuned"}}
 	if !reflect.DeepEqual(snap.Values, want) {
 		t.Errorf("Snapshot values = %+v, want %+v", snap.Values, want)
 	}

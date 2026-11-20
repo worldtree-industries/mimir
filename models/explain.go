@@ -23,7 +23,7 @@ type Source struct {
 // ExplainedItem is one Item's effective value in a Namespace and its Source.
 // Default is always the Item's Default, so an Override's effect is visible.
 type ExplainedItem struct {
-	Item        ItemKey `json:"item"`
+	Item        ItemRef `json:"item"`
 	Description string  `json:"description"`
 	Default     string  `json:"default"`
 	Value       string  `json:"value"`
@@ -39,7 +39,7 @@ type Explanation struct {
 }
 
 // Explain applies Precedence to overrides for ns and reports, for each of
-// items (the Config's Items, with Value as the Default), its effective value
+// items (the Config's Items), its effective value
 // and Source.
 func Explain(ns Namespace, items []Item, overrides []Override) Explanation {
 	winners := Precedence(ns, overrides)
@@ -47,13 +47,13 @@ func Explain(ns Namespace, items []Item, overrides []Override) Explanation {
 	explained := make([]ExplainedItem, 0, len(items))
 	for _, item := range items {
 		e := ExplainedItem{
-			Item:        item.Key(),
+			Item:        item.Ref(),
 			Description: item.Description,
-			Default:     item.Value,
-			Value:       item.Value,
+			Default:     item.Default,
+			Value:       item.Default,
 			Source:      Source{Kind: SourceDefault},
 		}
-		if o, ok := winners[item.Key()]; ok {
+		if o, ok := winners[item.Ref()]; ok {
 			e.Value = o.Value
 			e.Source = Source{Kind: SourceOverride, Override: &o}
 		}

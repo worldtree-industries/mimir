@@ -19,6 +19,6 @@ func (s Scope) ConfigWide() bool {
 type Override struct {
 	ID    int64   `json:"id,omitempty"`
 	Scope Scope   `json:"scope"`
-	Item  ItemKey `json:"item"`
+	Item  ItemRef `json:"item"`
 	Value string  `json:"value"`
 }

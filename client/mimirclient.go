@@ -11,7 +11,8 @@ import (
 )
 
 // MimirClientConfig is the name of MimirClient, the Config holding the
-// client's own settings. Like a generated Config's name it is derived from
+// client's own poll interval, server URL, object storage endpoint and bucket
+// prefix. Like a generated Config's name it is derived from
 // its Go package path and type. Every client registers it alongside the
 // Config it reads, in the same Deployable and Environment, so operators tune
 // it with Overrides and Precedence like any other Config.
@@ -87,7 +88,7 @@ func (s *mimirClientValues) definition() Definition {
 	return Definition{
 		Config:      MimirClientConfig,
 		DisplayName: mimirClientDisplayName,
-		Items: []Item{
+		Items: []ItemDefinition{
 			{
 				Name:        PollIntervalItem,
 				Type:        models.TypeString,
@@ -192,9 +193,9 @@ func (s *mimirClientValues) setBucketPrefix(value string) error {
 // namedLocation is the location MimirClient names once snap is applied over
 // its start values. A value MimirClient would reject leaves that part of
 // current, as applying it would.
-func namedLocation(snap models.Snapshot, start map[models.ItemKey]string, current location) location {
+func namedLocation(snap models.Snapshot, start map[models.ItemRef]string, current location) location {
 	value := func(item string) string {
-		key := models.ItemKey{Name: item, Type: models.TypeString}
+		key := models.ItemRef{Name: item, Type: models.TypeString}
 		if v, ok := snap.Value(key); ok {
 			return v
 		}
@@ -236,7 +237,7 @@ func (s *mimirClientValues) currentServerURL() string {
 	return s.serverURL
 }
 
-// wantedLocation is the location the settings name. The client reads from it
+// wantedLocation is the location the MimirClient Config names. The client reads from it
 // only once it has fetched its Snapshots there.
 func (s *mimirClientValues) wantedLocation() location {
 	s.mu.Lock()

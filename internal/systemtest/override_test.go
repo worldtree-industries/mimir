@@ -12,7 +12,7 @@ import (
 func fooOverride(value string) models.Override {
 	return models.Override{
 		Scope: models.Scope{Config: foo.FooConfigName},
-		Item:  models.ItemKey{Name: "foo", Type: models.TypeString},
+		Item:  models.ItemRef{Name: "foo", Type: models.TypeString},
 		Value: value,
 	}
 }

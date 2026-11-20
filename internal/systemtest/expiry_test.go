@@ -14,9 +14,9 @@ import (
 // expires (ADR 0004).
 const expiryAge = 60 * systemtest.Day
 
-func bannerKey() models.ItemKey  { return models.ItemKey{Name: "banner", Type: models.TypeString} }
-func timeoutKey() models.ItemKey { return models.ItemKey{Name: "timeout", Type: models.TypeInt} }
-func themeKey() models.ItemKey   { return models.ItemKey{Name: "theme", Type: models.TypeString} }
+func bannerRef() models.ItemRef  { return models.ItemRef{Name: "banner", Type: models.TypeString} }
+func timeoutRef() models.ItemRef { return models.ItemRef{Name: "timeout", Type: models.TypeInt} }
+func themeRef() models.ItemRef   { return models.ItemRef{Name: "theme", Type: models.TypeString} }
 
 // registerEachDay moves the clock on a day at a time, n times, and has every
 // reg in regs register again after each, as running pods of those versions
@@ -47,7 +47,7 @@ func TestItemUnregisteredForSixtyDaysExpiresWithItsOverrides(t *testing.T) {
 	h.Elapse(t, time.Hour)
 
 	// banner was last registered exactly sixty days ago, and so expires.
-	if got, want := itemKeys(t, h), []models.ItemKey{timeoutKey()}; !slices.Equal(got, want) {
+	if got, want := itemRefs(t, h), []models.ItemRef{timeoutRef()}; !slices.Equal(got, want) {
 		t.Errorf("Items after sixty days = %v, want only %v", got, want)
 	}
 
@@ -55,10 +55,10 @@ func TestItemUnregisteredForSixtyDaysExpiresWithItsOverrides(t *testing.T) {
 	if !ok {
 		t.Fatal("the Namespace's Snapshot is gone")
 	}
-	if _, found := snap.Value(bannerKey()); found {
+	if _, found := snap.Value(bannerRef()); found {
 		t.Errorf("Snapshot %+v still holds the expired Item's Override", snap.Values)
 	}
-	if got, found := snap.Value(timeoutKey()); !found || got != "45" {
+	if got, found := snap.Value(timeoutRef()); !found || got != "45" {
 		t.Errorf("Snapshot value of timeout = %q (present %t), want its Override %q kept", got, found, "45")
 	}
 
@@ -67,7 +67,7 @@ func TestItemUnregisteredForSixtyDaysExpiresWithItsOverrides(t *testing.T) {
 		t.Fatalf("history = %+v, want two creations and the expiry of banner's Override", history)
 	}
 	expired := history[2]
-	if expired.Action != models.HistoryExpired || expired.Item != bannerKey() || expired.Scope.Config != shopConfig {
+	if expired.Action != models.HistoryExpired || expired.Item != bannerRef() || expired.Scope.Config != shopConfig {
 		t.Errorf("last history entry = %+v, want banner's Override expired", expired)
 	}
 	if expired.OldValue == nil || *expired.OldValue != "sale" || expired.NewValue != nil {
@@ -88,7 +88,7 @@ func TestItemRegisteredWithinSixtyDaysDoesNotExpire(t *testing.T) {
 
 	h.Elapse(t, expiryAge-time.Hour)
 
-	if got, want := itemKeys(t, h), []models.ItemKey{bannerKey()}; !slices.Equal(got, want) {
+	if got, want := itemRefs(t, h), []models.ItemRef{bannerRef()}; !slices.Equal(got, want) {
 		t.Errorf("Items a little under sixty days on = %v, want %v still", got, want)
 	}
 	if snap, _ := h.Snapshot(t, shopDevNamespace()); len(snap.Values) != 1 {
@@ -115,20 +115,20 @@ func TestMixedVersionRolloutKeepsEveryItemEitherVersionRegisters(t *testing.T) {
 	// Both versions run side by side for a while, each registering what it
 	// declares, so neither's Items are removed nor does the new one's conflict.
 	registerEachDay(t, h, 10, oldVersion, newVersion)
-	want := []models.ItemKey{bannerKey(), themeKey(), timeoutKey()}
-	if got := itemKeys(t, h); !slices.Equal(got, want) {
+	want := []models.ItemRef{bannerRef(), themeRef(), timeoutRef()}
+	if got := itemRefs(t, h); !slices.Equal(got, want) {
 		t.Fatalf("Items during the rollout = %v, want %v", got, want)
 	}
 
 	// The old version is gone. Its last pod registered 59 days from now: banner
 	// is still there; a day later it expires, and the new version's Items stay.
 	registerEachDay(t, h, 59, newVersion)
-	if got := itemKeys(t, h); !slices.Equal(got, want) {
+	if got := itemRefs(t, h); !slices.Equal(got, want) {
 		t.Fatalf("Items 59 days after the old version left = %v, want %v still", got, want)
 	}
 	registerEachDay(t, h, 1, newVersion)
 
-	if got, remaining := itemKeys(t, h), []models.ItemKey{themeKey(), timeoutKey()}; !slices.Equal(got, remaining) {
+	if got, remaining := itemRefs(t, h), []models.ItemRef{themeRef(), timeoutRef()}; !slices.Equal(got, remaining) {
 		t.Errorf("Items 60 days after the old version left = %v, want %v", got, remaining)
 	}
 }
@@ -162,7 +162,7 @@ func TestNamespaceUnregisteredForSixtyDaysExpiresAndItsSnapshotIsDeleted(t *test
 	if len(namespaces) != 1 || namespaces[0].Namespace != kept {
 		t.Errorf("Namespaces = %+v, want only %+v", namespaces, kept)
 	}
-	if got, want := itemKeys(t, h), []models.ItemKey{bannerKey()}; !slices.Equal(got, want) {
+	if got, want := itemRefs(t, h), []models.ItemRef{bannerRef()}; !slices.Equal(got, want) {
 		t.Errorf("Items = %v, want %v: a Namespace expiring doesn't expire Items", got, want)
 	}
 }
@@ -203,7 +203,7 @@ func TestReplicasExpireEachItemOnce(t *testing.T) {
 
 	h.Elapse(t, expiryAge)
 
-	if got := itemKeys(t, h); len(got) != 0 {
+	if got := itemRefs(t, h); len(got) != 0 {
 		t.Errorf("Items after sixty days = %v, want none", got)
 	}
 	entries := h.History(t, models.Scope{Config: shopConfig})

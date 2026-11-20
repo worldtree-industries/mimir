@@ -34,7 +34,7 @@ func (s *Store) RecordRegistration(ctx context.Context, reg models.Registration,
 				description = EXCLUDED.description,
 				default_value = EXCLUDED.default_value,
 				last_registered_at = EXCLUDED.last_registered_at`,
-			ns.Config, item.Name, string(item.Type), item.Description, item.Value, at,
+			ns.Config, item.Name, string(item.Type), item.Description, item.Default, at,
 		); err != nil {
 			return false, fmt.Errorf("record Item %s (%s): %w", item.Name, item.Type, err)
 		}
@@ -80,7 +80,7 @@ func (s *Store) Namespaces(ctx context.Context, config string) ([]models.Namespa
 	return namespaces, nil
 }
 
-// Items returns every Item registered for config, with its Default as Value.
+// Items returns every Item registered for config, with its Default.
 func (s *Store) Items(ctx context.Context, config string) ([]models.Item, error) {
 	rows, err := s.q(ctx).Query(ctx, `
 		SELECT name, description, type, default_value FROM items
@@ -93,7 +93,7 @@ func (s *Store) Items(ctx context.Context, config string) ([]models.Item, error)
 	var items []models.Item
 	for rows.Next() {
 		var item models.Item
-		if err = rows.Scan(&item.Name, &item.Description, &item.Type, &item.Value); err != nil {
+		if err = rows.Scan(&item.Name, &item.Description, &item.Type, &item.Default); err != nil {
 			return nil, fmt.Errorf("read Item of %s: %w", config, err)
 		}
 		items = append(items, item)

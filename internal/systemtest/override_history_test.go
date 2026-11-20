@@ -85,7 +85,7 @@ func TestUpdateValueMustParseAsTheItemsType(t *testing.T) {
 	f := newFleet(t)
 	bar := f.h.CreateOverride(t, models.Override{
 		Scope: models.Scope{Config: foo.FooConfigName, Deployable: deployableA},
-		Item:  models.ItemKey{Name: "bar", Type: models.TypeInt},
+		Item:  models.ItemRef{Name: "bar", Type: models.TypeInt},
 		Value: "7",
 	})
 

@@ -28,7 +28,7 @@ func (s *Store) TryLockExpiry(ctx context.Context) (bool, error) {
 type ExpiredItem struct {
 	ID        int64
 	Config    string
-	Key       models.ItemKey
+	Ref       models.ItemRef
 	Overrides []models.Override
 }
 
@@ -50,7 +50,7 @@ func (s *Store) ExpiredItems(ctx context.Context, cutoff time.Time) ([]ExpiredIt
 	var ids []int64
 	for rows.Next() {
 		var item ExpiredItem
-		if err = rows.Scan(&item.ID, &item.Config, &item.Key.Name, &item.Key.Type); err != nil {
+		if err = rows.Scan(&item.ID, &item.Config, &item.Ref.Name, &item.Ref.Type); err != nil {
 			return nil, fmt.Errorf("read expired Item: %w", err)
 		}
 		byID[item.ID] = len(items)
@@ -83,7 +83,7 @@ func (s *Store) ExpiredItems(ctx context.Context, cutoff time.Time) ([]ExpiredIt
 		}
 		item := &items[byID[itemID]]
 		o.Scope.Config = item.Config
-		o.Item = item.Key
+		o.Item = item.Ref
 		item.Overrides = append(item.Overrides, o)
 	}
 	if err = orows.Err(); err != nil {

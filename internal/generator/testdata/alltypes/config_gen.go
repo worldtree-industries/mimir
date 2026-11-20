@@ -44,7 +44,7 @@ func NewAllTypesConfig(ctx context.Context, opts ...client.Option) *AllTypesConf
 	client.Start(ctx, client.Definition{
 		Config:      AllTypesConfigName,
 		DisplayName: AllTypesConfigDisplayName,
-		Items: []client.Item{
+		Items: []client.ItemDefinition{
 			{
 				Name:        "s",
 				Type:        "string",

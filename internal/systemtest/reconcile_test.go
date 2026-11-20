@@ -16,7 +16,7 @@ func fooNamespace() models.Namespace {
 }
 
 func tunedValues(value string) []models.SnapshotValue {
-	return []models.SnapshotValue{{Item: models.ItemKey{Name: "foo", Type: models.TypeString}, Value: value}}
+	return []models.SnapshotValue{{Item: models.ItemRef{Name: "foo", Type: models.TypeString}, Value: value}}
 }
 
 func registerFooConsumer(t *testing.T, h *systemtest.Harness) *foo.FooConfig {

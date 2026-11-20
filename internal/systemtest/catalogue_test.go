@@ -20,7 +20,7 @@ func TestAdminAPIListsConfigsItemsAndNamespaces(t *testing.T) {
 		}
 	}
 
-	// Every client registers MimirClient, its own settings, beside its Config.
+	// Every client registers the MimirClient Config beside its Config.
 	configs := h.Configs(t)
 	if len(configs) != 2 || configs[0].Name != client.MimirClientConfig || configs[1].Name != foo.FooConfigName {
 		t.Fatalf("Configs = %+v, want %s and %s", configs, client.MimirClientConfig, foo.FooConfigName)

@@ -24,8 +24,8 @@ var ErrOverrideNotFound = errors.New("no such Override")
 // ErrUnknownNamespace means the Namespace has never registered.
 var ErrUnknownNamespace = errors.New("no such Namespace")
 
-// Config is what a Service is built from.
-type Config struct {
+// Deps are what a Service is built on.
+type Deps struct {
 	Store     *data.Store
 	Snapshots *data.Snapshots
 	Clock     models.Clock
@@ -45,6 +45,6 @@ type Service struct {
 }
 
 // New returns a Service.
-func New(cfg Config) *Service {
-	return &Service{store: cfg.Store, snapshots: cfg.Snapshots, clock: cfg.Clock, logger: cfg.Logger}
+func New(deps Deps) *Service {
+	return &Service{store: deps.Store, snapshots: deps.Snapshots, clock: deps.Clock, logger: deps.Logger}
 }

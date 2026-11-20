@@ -40,7 +40,7 @@ func NewFooConfig(ctx context.Context, opts ...client.Option) *FooConfig {
 	client.Start(ctx, client.Definition{
 		Config:      FooConfigName,
 		DisplayName: FooConfigDisplayName,
-		Items: []client.Item{
+		Items: []client.ItemDefinition{
 			{
 				Name:        "foo",
 				Type:        "string",

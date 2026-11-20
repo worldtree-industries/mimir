@@ -22,7 +22,7 @@ See [cmd/mimir-generate/README.md](cmd/mimir-generate/README.md) for detailed do
 1. Create a config file (e.g., `myapp_config.json`; the generator picks up files ending in `_config.json`):
 ```json
 {
-  "namespace": "MyAppConfig",
+  "type_name": "MyAppConfig",
   "items": [
     {
       "name": "port",
@@ -83,9 +83,9 @@ A generated Config's constructor starts the Mimir client, which:
 
 Every Config in a process shares one client runtime (`client.Runtime`): one Namespace discovery, one `MimirClient` (below), one connection to object storage, and one loop that polls every Config's Snapshot and registers each when due. The first constructor waits at most 5 seconds for its first read; a later one reads its own Snapshot at once only if object storage answered the last read, so a cold start with storage down waits once, not once per Config. Registrations fall due between polls, so each lands at the first poll after it is due.
 
-### The client's own settings: `MimirClient`
+### The MimirClient Config
 
-The client's settings are a Config of their own, `MimirClient` (named `github.com/worldtree-industries/mimir/client.MimirClient`), which every client registers and polls alongside its Config, in the same Deployable and Environment. Tune them with Overrides like any other Config. Each starts from an environment variable if it's set, else its Default:
+The client's own poll interval, server URL, object storage endpoint and bucket prefix are the Items of a Config of their own, `MimirClient` (named `github.com/worldtree-industries/mimir/client.MimirClient`), which every process registers and polls alongside its Configs, in the same Deployable and Environment. Tune them with Overrides like any other Config. Each starts from an environment variable if it's set, else its Default:
 
 | Item (all `string`) | Environment variable | Default |
 | --- | --- | --- |
@@ -94,7 +94,7 @@ The client's settings are a Config of their own, `MimirClient` (named `github.co
 | `object_store_endpoint` (empty: the standard `AWS_ENDPOINT_URL_S3` / `AWS_ENDPOINT_URL`) | `MIMIR_OBJECT_STORE_ENDPOINT` | empty |
 | `bucket_prefix` | `MIMIR_BUCKET_PREFIX` | `mimir` |
 
-A new poll interval applies from the next wait, and a new server URL from the next Registration. A new endpoint or bucket prefix is adopted only once the client has read every Snapshot (`MimirClient`'s and each Config's) there, and `MimirClient`'s Snapshot there names that same location; until then it logs the failure, keeps polling the old location and tries again at each poll, so a bad Override can't strand it where it can't read the fix. A location where nothing was published, or where `MimirClient`'s Snapshot is missing, is never adopted (except the client's starting location): moving there would drop every Config to its Defaults and then, without the Override that pointed there, move straight back. A restarted client begins again from its environment variables or Defaults, and adopts an Override only once it reads it from there. A setting the client can't use (an environment variable or an Override) is logged and the last good one kept. `MIMIR_ENVIRONMENT`, `MIMIR_DEPLOYABLE` and object storage credentials always come from the environment, never from Mimir.
+A new poll interval applies from the next wait, and a new server URL from the next Registration. A new endpoint or bucket prefix is adopted only once the client has read every Snapshot (`MimirClient`'s and each Config's) there, and `MimirClient`'s Snapshot there names that same location; until then it logs the failure, keeps polling the old location and tries again at each poll, so a bad Override can't strand it where it can't read the fix. A location where nothing was published, or where `MimirClient`'s Snapshot is missing, is never adopted (except the client's starting location): moving there would drop every Config to its Defaults and then, without the Override that pointed there, move straight back. A restarted client begins again from its environment variables or Defaults, and adopts an Override only once it reads it from there. A MimirClient value the client can't use (from an environment variable or an Override) is logged and the last good one kept. `MIMIR_ENVIRONMENT`, `MIMIR_DEPLOYABLE` and object storage credentials always come from the environment, never from Mimir.
 
 Values are never read from `mimir-server`, so a program that starts while it is down still gets its real values. Nothing object storage or a bad value does can break a running program:
 
@@ -156,7 +156,7 @@ Buckets are named `<prefix>-<environment>`; the prefix is `mimir` unless `MIMIR_
 
 A config file is JSON with one Config:
 
-- `namespace` (required): the Go type name of the generated Config, e.g. `MyAppConfig`.
+- `type_name` (required): the Go type name of the generated Config, e.g. `MyAppConfig`. Older files that call it `namespace` still work.
 - `display_name` (optional): a short human-friendly name for the API and future UI.
 - `items`: the Config's Items, each with `name`, `description`, `type` and `value` (its Default, as a string; collections are JSON arrays in a string).
 

@@ -1,5 +1,5 @@
 {
-  "namespace": "FooConfig",
+  "type_name": "FooConfig",
   "items": [
     {
       "name": "foo",

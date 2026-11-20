@@ -69,7 +69,7 @@ func New(ctx context.Context, cfg Config) (*router.Router, error) {
 	if prefix == "" {
 		prefix = models.DefaultBucketPrefix
 	}
-	svc := service.New(service.Config{
+	svc := service.New(service.Deps{
 		Store:     store,
 		Snapshots: data.NewSnapshots(cfg.ObjectStore, prefix),
 		Clock:     cfg.Clock,

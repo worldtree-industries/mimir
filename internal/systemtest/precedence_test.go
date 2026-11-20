@@ -228,7 +228,7 @@ func TestPrecedenceIsPerItem(t *testing.T) {
 	f.h.CreateOverride(t, scopedOverride("", "", "tuned"))
 	f.h.CreateOverride(t, models.Override{
 		Scope: models.Scope{Config: foo.FooConfigName, Environment: envProd},
-		Item:  models.ItemKey{Name: "bar", Type: models.TypeInt},
+		Item:  models.ItemRef{Name: "bar", Type: models.TypeInt},
 		Value: "7",
 	})
 	f.h.NextPoll(t)
@@ -420,7 +420,7 @@ func TestChangeToOneConfigLeavesAnotherConfigsSnapshotsAlone(t *testing.T) {
 	other := models.Namespace{Config: "some/other.Config", Deployable: deployableA, Environment: envDev}
 	status, body := f.h.Post(t, "/v1/registrations", models.Registration{
 		Namespace: other,
-		Items:     []models.Item{{Name: "foo", Type: models.TypeString, Description: "x", Value: "d"}},
+		Items:     []models.Item{{Name: "foo", Type: models.TypeString, Description: "x", Default: "d"}},
 	})
 	if status != http.StatusNoContent {
 		t.Fatalf("register other Config: status %d, body %s", status, body)
@@ -471,14 +471,14 @@ func TestOverridesCanBeListedByConfigAndScope(t *testing.T) {
 	// An Override of another Config never shows up.
 	status, body := f.h.Post(t, "/v1/registrations", models.Registration{
 		Namespace: models.Namespace{Config: "some/other.Config", Deployable: deployableA, Environment: envDev},
-		Items:     []models.Item{{Name: "foo", Type: models.TypeString, Description: "x", Value: "d"}},
+		Items:     []models.Item{{Name: "foo", Type: models.TypeString, Description: "x", Default: "d"}},
 	})
 	if status != http.StatusNoContent {
 		t.Fatalf("register other Config: status %d, body %s", status, body)
 	}
 	f.h.CreateOverride(t, models.Override{
 		Scope: models.Scope{Config: "some/other.Config"},
-		Item:  models.ItemKey{Name: "foo", Type: models.TypeString},
+		Item:  models.ItemRef{Name: "foo", Type: models.TypeString},
 		Value: "elsewhere",
 	})
 
@@ -575,7 +575,7 @@ func TestExplainSaysWhereEachItemsValueComesFrom(t *testing.T) {
 	deployable := f.h.CreateOverride(t, scopedOverride(deployableA, "", "deployable"))
 	f.h.CreateOverride(t, models.Override{
 		Scope: models.Scope{Config: foo.FooConfigName, Environment: envProd},
-		Item:  models.ItemKey{Name: "bar", Type: models.TypeInt},
+		Item:  models.ItemRef{Name: "bar", Type: models.TypeInt},
 		Value: "7",
 	})
 

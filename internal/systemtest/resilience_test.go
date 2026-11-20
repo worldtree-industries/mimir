@@ -17,10 +17,10 @@ import (
 	"github.com/worldtree-industries/mimir/models"
 )
 
-// fooKey is foo's string Item "foo".
+// fooRef is foo's string Item "foo".
 //
-//nolint:gochecknoglobals // a fixed, read-only Item key
-var fooKey = models.ItemKey{Name: "foo", Type: models.TypeString}
+//nolint:gochecknoglobals // a fixed, read-only ItemRef
+var fooRef = models.ItemRef{Name: "foo", Type: models.TypeString}
 
 // fooConsumerDev is foo-consumer's Namespace in dev.
 //
@@ -49,7 +49,7 @@ func TestProgramIsToldWhichValuesChanged(t *testing.T) {
 	h.CreateOverride(t, fooOverride("tuned"))
 	h.NextPoll(t)
 
-	want := []client.Event{{Kind: client.EventValueChanged, Item: fooKey, Value: "tuned"}}
+	want := []client.Event{{Kind: client.EventValueChanged, Item: fooRef, Value: "tuned"}}
 	if got := d.TakeValueEvents(); !slices.Equal(got, want) {
 		t.Errorf("value events = %+v, want %+v", got, want)
 	}
@@ -102,7 +102,7 @@ func TestMissingSnapshotMeansDefaults(t *testing.T) {
 	if err := d.LastPollError(); err != nil {
 		t.Errorf("a missing Snapshot was reported as a failed poll: %v", err)
 	}
-	want := []client.Event{{Kind: client.EventValueChanged, Item: fooKey, Value: "default"}}
+	want := []client.Event{{Kind: client.EventValueChanged, Item: fooRef, Value: "default"}}
 	if got := d.TakeValueEvents(); !slices.Equal(got, want) {
 		t.Errorf("value events = %+v, want %+v", got, want)
 	}
@@ -181,7 +181,7 @@ func TestColdStartWithStoreUnreachableUsesDefaultsUntilReachable(t *testing.T) {
 func TestValueThatDoesNotParseKeepsLastGoodValue(t *testing.T) {
 	h := systemtest.New(t)
 	cfg, d := startFooConsumer(t, h)
-	barKey := models.ItemKey{Name: "bar", Type: models.TypeInt}
+	barKey := models.ItemRef{Name: "bar", Type: models.TypeInt}
 	h.PutSnapshot(t, fooConsumerDev, models.NewSnapshot([]models.SnapshotValue{{Item: barKey, Value: "42"}}))
 	h.NextPoll(t)
 	d.TakeValueEvents()
@@ -189,7 +189,7 @@ func TestValueThatDoesNotParseKeepsLastGoodValue(t *testing.T) {
 	// A bad value reaches object storage alongside a good one.
 	h.PutSnapshot(t, fooConsumerDev, models.NewSnapshot([]models.SnapshotValue{
 		{Item: barKey, Value: "forty-two"},
-		{Item: fooKey, Value: "tuned"},
+		{Item: fooRef, Value: "tuned"},
 	}))
 	h.NextPoll(t)
 
@@ -215,7 +215,7 @@ func TestValueThatDoesNotParseKeepsLastGoodValue(t *testing.T) {
 	if len(rejected) != 1 || rejected[0].Item != barKey || rejected[0].Value != "forty-two" || rejected[0].Err == nil {
 		t.Errorf("rejections = %+v, want bar's %q rejected with an error", rejected, "forty-two")
 	}
-	wantChanged := []client.Event{{Kind: client.EventValueChanged, Item: fooKey, Value: "tuned"}}
+	wantChanged := []client.Event{{Kind: client.EventValueChanged, Item: fooRef, Value: "tuned"}}
 	if !slices.Equal(changed, wantChanged) {
 		t.Errorf("changes = %+v, want %+v", changed, wantChanged)
 	}
@@ -223,10 +223,10 @@ func TestValueThatDoesNotParseKeepsLastGoodValue(t *testing.T) {
 	// The bad value is reported once, not on every poll that still finds it.
 	h.PutSnapshot(t, fooConsumerDev, models.NewSnapshot([]models.SnapshotValue{
 		{Item: barKey, Value: "forty-two"},
-		{Item: fooKey, Value: "retuned"},
+		{Item: fooRef, Value: "retuned"},
 	}))
 	h.NextPoll(t)
-	want := []client.Event{{Kind: client.EventValueChanged, Item: fooKey, Value: "retuned"}}
+	want := []client.Event{{Kind: client.EventValueChanged, Item: fooRef, Value: "retuned"}}
 	if got := d.TakeValueEvents(); !slices.Equal(got, want) {
 		t.Errorf("value events = %+v, want only %+v", got, want)
 	}
@@ -254,9 +254,9 @@ func TestGettersAreSafeDuringPolling(t *testing.T) {
 
 	for i := range 5 {
 		h.PutSnapshot(t, fooConsumerDev, models.NewSnapshot([]models.SnapshotValue{
-			{Item: fooKey, Value: fmt.Sprintf("v%d", i)},
-			{Item: models.ItemKey{Name: "quux", Type: models.TypeStringArray}, Value: fmt.Sprintf(`["v%d"]`, i)},
-			{Item: models.ItemKey{Name: "corge", Type: models.TypeStringSet}, Value: fmt.Sprintf(`["v%d"]`, i)},
+			{Item: fooRef, Value: fmt.Sprintf("v%d", i)},
+			{Item: models.ItemRef{Name: "quux", Type: models.TypeStringArray}, Value: fmt.Sprintf(`["v%d"]`, i)},
+			{Item: models.ItemRef{Name: "corge", Type: models.TypeStringSet}, Value: fmt.Sprintf(`["v%d"]`, i)},
 		}))
 		h.NextPoll(t)
 	}

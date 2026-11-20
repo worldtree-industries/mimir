@@ -22,14 +22,14 @@ type configPoll struct {
 
 	// start is each Item's value when no Override applies: its Default, or
 	// for MimirClient the environment variable it starts from.
-	start map[models.ItemKey]string
+	start map[models.ItemRef]string
 	// etag is the ETag of the last Snapshot applied.
 	etag string
 	// good is each Item's last good value: what its getter returns.
-	good map[models.ItemKey]string
+	good map[models.ItemRef]string
 	// rejected is each Item's last rejected value, so a bad value that stays
 	// in the Snapshot is reported once rather than on every poll.
-	rejected map[models.ItemKey]string
+	rejected map[models.ItemRef]string
 }
 
 func newConfigPoll(def Definition, logger *slog.Logger, report func(Event)) *configPoll {
@@ -37,12 +37,12 @@ func newConfigPoll(def Definition, logger *slog.Logger, report func(Event)) *con
 		def:      def,
 		logger:   logger,
 		report:   report,
-		start:    make(map[models.ItemKey]string, len(def.Items)),
-		good:     make(map[models.ItemKey]string, len(def.Items)),
-		rejected: make(map[models.ItemKey]string),
+		start:    make(map[models.ItemRef]string, len(def.Items)),
+		good:     make(map[models.ItemRef]string, len(def.Items)),
+		rejected: make(map[models.ItemRef]string),
 	}
 	for _, item := range def.Items {
-		p.start[item.key()] = item.Default
+		p.start[item.ref()] = item.Default
 	}
 
 	return p
@@ -116,7 +116,7 @@ func (p *configPoll) apply(ctx context.Context, f fetched) {
 // and reported once, and the Item keeps its last good value.
 func (p *configPoll) applySnapshot(ctx context.Context, snap models.Snapshot) {
 	for _, item := range p.def.Items {
-		key := item.key()
+		key := item.ref()
 		value, ok := snap.Value(key)
 		if !ok {
 			value = p.start[key]
@@ -129,14 +129,14 @@ func (p *configPoll) applySnapshot(ctx context.Context, snap models.Snapshot) {
 // Taking it isn't a change, so only rejections are reported.
 func (p *configPoll) applyStart(ctx context.Context) {
 	for _, item := range p.def.Items {
-		key := item.key()
+		key := item.ref()
 		p.setItem(ctx, item, key, p.start[key], false)
 	}
 }
 
 // setItem sets one Item to value unless it already has it, or value was the
 // last one rejected for it.
-func (p *configPoll) setItem(ctx context.Context, item Item, key models.ItemKey, value string, notify bool) {
+func (p *configPoll) setItem(ctx context.Context, item ItemDefinition, key models.ItemRef, value string, notify bool) {
 	if good, ok := p.good[key]; ok && good == value {
 		delete(p.rejected, key)
 		return
@@ -162,8 +162,8 @@ func (p *configPoll) setItem(ctx context.Context, item Item, key models.ItemKey,
 	}
 }
 
-func (item Item) key() models.ItemKey {
-	return models.ItemKey{Name: item.Name, Type: item.Type}
+func (item ItemDefinition) ref() models.ItemRef {
+	return models.ItemRef{Name: item.Name, Type: item.Type}
 }
 
 // startFromEnv makes each Item's start value its environment variable, when
@@ -180,6 +180,6 @@ func (p *configPoll) startFromEnv(ctx context.Context, getenv func(string) strin
 				"variable", name, "value", value, "error", err)
 			continue
 		}
-		p.start[item.key()] = value
+		p.start[item.ref()] = value
 	}
 }

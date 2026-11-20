@@ -13,7 +13,7 @@ type ConfigInfo struct {
 // RegisteredItem is an Item as Mimir knows it from Registration. An Item no
 // Deployable has registered for 60 days expires (ADR 0004).
 type RegisteredItem struct {
-	ItemKey
+	ItemRef
 
 	Config      string `json:"config"`
 	Description string `json:"description"`

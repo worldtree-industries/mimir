@@ -24,7 +24,7 @@ func registerAllTypes(t *testing.T, h *systemtest.Harness) {
 func allTypesOverride(item string, typ models.Type, value string) models.Override {
 	return models.Override{
 		Scope: models.Scope{Config: alltypes.AllTypesConfigName},
-		Item:  models.ItemKey{Name: item, Type: typ},
+		Item:  models.ItemRef{Name: item, Type: typ},
 		Value: value,
 	}
 }
@@ -77,7 +77,7 @@ func TestOverrideForAnItemNobodyRegisteredIsRejected(t *testing.T) {
 
 	unknownName := models.Override{
 		Scope: models.Scope{Config: foo.FooConfigName},
-		Item:  models.ItemKey{Name: "nobody-declared-this", Type: models.TypeString},
+		Item:  models.ItemRef{Name: "nobody-declared-this", Type: models.TypeString},
 		Value: "x",
 	}
 	// "foo" is registered as a string; as an int it is a different Item.

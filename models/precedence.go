@@ -35,8 +35,8 @@ const (
 // overrides whose Scope covers ns, the one with the most specific Scope. Items
 // with no covering Override are absent, so they have their Default. Two
 // Overrides of one Item never share a Scope, so the winner is unique.
-func Precedence(ns Namespace, overrides []Override) map[ItemKey]Override {
-	winners := map[ItemKey]Override{}
+func Precedence(ns Namespace, overrides []Override) map[ItemRef]Override {
+	winners := map[ItemRef]Override{}
 	for _, o := range overrides {
 		if !o.Scope.Covers(ns) {
 			continue

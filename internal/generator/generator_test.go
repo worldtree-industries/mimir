@@ -1,6 +1,7 @@
 package generator_test
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -77,7 +78,7 @@ func writeFile(t *testing.T, path string, data []byte) {
 }
 
 func TestDuplicateItemNamesAreRejected(t *testing.T) {
-	input := []byte(`{"namespace":"DupConfig","items":[
+	input := []byte(`{"type_name":"DupConfig","items":[
 		{"name":"a","description":"","type":"int","value":"1"},
 		{"name":"b","description":"","type":"int","value":"1"},
 		{"name":"a","description":"","type":"string","value":"x"}]}`)
@@ -91,5 +92,20 @@ func TestDuplicateItemNamesAreRejected(t *testing.T) {
 	}
 	if got != nil {
 		t.Errorf("no output should be produced, got %d bytes", len(got))
+	}
+}
+
+func TestOldNamespaceKeyStillNamesTheType(t *testing.T) {
+	items := `"items":[{"name":"a","description":"","type":"int","value":"1"}]`
+	current, err := generator.Generate([]byte(`{"type_name":"KeyConfig",`+items+`}`), "key", "example.com/key")
+	if err != nil {
+		t.Fatalf("Generate with type_name: %v", err)
+	}
+	old, err := generator.Generate([]byte(`{"namespace":"KeyConfig",`+items+`}`), "key", "example.com/key")
+	if err != nil {
+		t.Fatalf("Generate with the old namespace key: %v", err)
+	}
+	if !bytes.Equal(old, current) {
+		t.Errorf("the old namespace key generated different code than type_name:\n%s", old)
 	}
 }

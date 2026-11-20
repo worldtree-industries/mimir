@@ -110,6 +110,10 @@ type RunningDeployable struct {
 	logs       lockedBuffer
 	registered chan error
 	polled     chan error
+
+	mu          sync.Mutex
+	valueEvents []client.Event
+	lastPollErr error
 }
 
 // NewDeployable places d in h. Pass its ClientOptions to the generated
@@ -164,7 +168,24 @@ func (d *RunningDeployable) record(e client.Event) {
 		d.registered <- e.Err
 	case client.EventPolled:
 		d.polled <- e.Err
+	case client.EventValueChanged, client.EventValueRejected:
+		d.mu.Lock()
+		d.valueEvents = append(d.valueEvents, e)
+		d.mu.Unlock()
 	}
+}
+
+// TakeValueEvents returns the value events (changes and rejections) the
+// client has reported since the last call, in order. A poll's value events
+// are all reported before NextPoll returns.
+func (d *RunningDeployable) TakeValueEvents() []client.Event {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	events := d.valueEvents
+	d.valueEvents = nil
+
+	return events
 }
 
 // AwaitRegistration waits for the client's startup Registration to finish
@@ -201,10 +222,23 @@ func (h *Harness) NextPoll(t *testing.T) {
 	h.Clock.Advance(client.DefaultPollInterval)
 
 	for _, d := range deployables {
-		if err := await(t, d.polled, "poll"); err != nil {
+		err := await(t, d.polled, "poll")
+		if err != nil {
 			t.Logf("poll by %s finished with: %v", d.Name, err)
 		}
+		d.mu.Lock()
+		d.lastPollErr = err
+		d.mu.Unlock()
 	}
+}
+
+// LastPollError is the error the Deployable's client reported for the poll
+// NextPoll last drove, or nil if that poll succeeded.
+func (d *RunningDeployable) LastPollError() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.lastPollErr
 }
 
 // CreateOverride creates o through the admin API and returns it as created.
@@ -273,6 +307,45 @@ func (h *Harness) Snapshot(t *testing.T, ns models.Namespace) (models.Snapshot, 
 	}
 
 	return snap, true
+}
+
+// PutSnapshot writes snap to the store as ns's Snapshot, standing in for
+// whatever mimir-server, or anything else with write access, might publish.
+func (h *Harness) PutSnapshot(t *testing.T, ns models.Namespace, snap models.Snapshot) {
+	t.Helper()
+
+	body, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
+	if err = h.Store.Put(t.Context(), loc.Bucket, loc.Key, body); err != nil {
+		t.Fatalf("write Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
+	}
+}
+
+// DeleteSnapshot removes ns's Snapshot from the store, as expiring the
+// Namespace does.
+func (h *Harness) DeleteSnapshot(t *testing.T, ns models.Namespace) {
+	t.Helper()
+
+	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
+	if err := h.Store.Delete(t.Context(), loc.Bucket, loc.Key); err != nil {
+		t.Fatalf("delete Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
+	}
+}
+
+// SnapshotETag is the ETag of ns's Snapshot in the store.
+func (h *Harness) SnapshotETag(t *testing.T, ns models.Namespace) string {
+	t.Helper()
+
+	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
+	obj, err := h.Store.Get(t.Context(), loc.Bucket, loc.Key, "")
+	if err != nil {
+		t.Fatalf("read Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
+	}
+
+	return obj.ETag
 }
 
 func await(t *testing.T, ch <-chan error, what string) error {

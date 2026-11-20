@@ -79,9 +79,15 @@ A generated Config's constructor starts the Mimir client, which:
 1. determines its Namespace: the Config's derived name, the Deployable (`MIMIR_DEPLOYABLE`, or else the last element of the binary's main package path, so `cmd/checkout` is `checkout`), and the Environment (`MIMIR_ENVIRONMENT`). Without an Environment it logs an error and runs on Defaults only.
 2. reads its Snapshot from object storage at a location it builds itself: bucket `mimir-<environment>`, object `<config>/<deployable>.json`. A missing Snapshot means every Item uses its Default.
 3. registers the Config's Items with `mimir-server` (`MIMIR_SERVER_URL`, default `http://mimir-server:8080`) in the background. A failed Registration is logged and never affects the values.
-4. polls the Snapshot every 30 seconds until the constructor's context is done.
+4. polls the Snapshot every 30 seconds until the constructor's context is done, with conditional GETs, so an unchanged Snapshot costs almost nothing and changes no values.
 
-Values are never read from `mimir-server`, so a program that starts while it is down still gets its real values.
+Values are never read from `mimir-server`, so a program that starts while it is down still gets its real values. Nothing object storage or a bad value does can break a running program:
+
+- If object storage can't be reached (network errors, 5xx), the client logs the failure and keeps its last good values. At a cold start that means Defaults, and the next polls pick up the real values once it's reachable.
+- A value that doesn't parse as its Item's type is logged and reported, and the Item keeps its last good value. The rest of the Snapshot still applies.
+- Getters are safe to call from any goroutine while values update.
+
+To react to changes and errors, pass `client.WithEventHandler` to the constructor. It's told about each Item whose value changes (`EventValueChanged`), each rejected value (`EventValueRejected`), and each poll and Registration, with `Err` set when one failed.
 
 ## mimir-server
 

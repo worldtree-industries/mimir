@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/worldtree-industries/mimir/models"
 )
 
@@ -57,52 +59,21 @@ func (s *Store) RecordRegistration(ctx context.Context, reg models.Registration,
 
 // Namespaces returns every known Namespace of config.
 func (s *Store) Namespaces(ctx context.Context, config string) ([]models.Namespace, error) {
-	rows, err := s.q(ctx).Query(ctx, `
-		SELECT config, deployable, environment FROM namespaces
+	return list(ctx, s.q(ctx), "Namespaces of "+config, scanNamespace, `
+		SELECT `+namespaceColumns+` FROM namespaces
 		WHERE config = $1 ORDER BY deployable, environment`, config)
-	if err != nil {
-		return nil, fmt.Errorf("list Namespaces of %s: %w", config, err)
-	}
-	defer rows.Close()
-
-	var namespaces []models.Namespace
-	for rows.Next() {
-		var ns models.Namespace
-		if err = rows.Scan(&ns.Config, &ns.Deployable, &ns.Environment); err != nil {
-			return nil, fmt.Errorf("read Namespace of %s: %w", config, err)
-		}
-		namespaces = append(namespaces, ns)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("list Namespaces of %s: %w", config, err)
-	}
-
-	return namespaces, nil
 }
 
 // Items returns every Item registered for config, with its Default.
 func (s *Store) Items(ctx context.Context, config string) ([]models.Item, error) {
-	rows, err := s.q(ctx).Query(ctx, `
+	return list(ctx, s.q(ctx), "Items of "+config, func(row pgx.Row) (models.Item, error) {
+		var item models.Item
+		err := row.Scan(&item.Name, &item.Description, &item.Type, &item.Default)
+
+		return item, err
+	}, `
 		SELECT name, description, type, default_value FROM items
 		WHERE config = $1 ORDER BY name, type`, config)
-	if err != nil {
-		return nil, fmt.Errorf("list Items of %s: %w", config, err)
-	}
-	defer rows.Close()
-
-	var items []models.Item
-	for rows.Next() {
-		var item models.Item
-		if err = rows.Scan(&item.Name, &item.Description, &item.Type, &item.Default); err != nil {
-			return nil, fmt.Errorf("read Item of %s: %w", config, err)
-		}
-		items = append(items, item)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("list Items of %s: %w", config, err)
-	}
-
-	return items, nil
 }
 
 // HasNamespace reports whether ns is a known Namespace.
@@ -121,27 +92,9 @@ func (s *Store) HasNamespace(ctx context.Context, ns models.Namespace) (bool, er
 
 // AllNamespaces returns every known Namespace.
 func (s *Store) AllNamespaces(ctx context.Context) ([]models.Namespace, error) {
-	rows, err := s.q(ctx).Query(ctx, `
-		SELECT config, deployable, environment FROM namespaces
+	return list(ctx, s.q(ctx), "Namespaces", scanNamespace, `
+		SELECT `+namespaceColumns+` FROM namespaces
 		ORDER BY config, deployable, environment`)
-	if err != nil {
-		return nil, fmt.Errorf("list Namespaces: %w", err)
-	}
-	defer rows.Close()
-
-	var namespaces []models.Namespace
-	for rows.Next() {
-		var ns models.Namespace
-		if err = rows.Scan(&ns.Config, &ns.Deployable, &ns.Environment); err != nil {
-			return nil, fmt.Errorf("read Namespace: %w", err)
-		}
-		namespaces = append(namespaces, ns)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("list Namespaces: %w", err)
-	}
-
-	return namespaces, nil
 }
 
 // NamespaceKnown reports whether ns is registered.

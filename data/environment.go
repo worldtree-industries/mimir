@@ -3,6 +3,8 @@ package data
 import (
 	"context"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // EnsureEnvironments creates every named Environment that doesn't exist yet.
@@ -20,25 +22,12 @@ func (s *Store) EnsureEnvironments(ctx context.Context, names []string) error {
 
 // Environments lists the Environment names, in name order.
 func (s *Store) Environments(ctx context.Context) ([]string, error) {
-	rows, err := s.q(ctx).Query(ctx, `SELECT name FROM environments ORDER BY name`)
-	if err != nil {
-		return nil, fmt.Errorf("list Environments: %w", err)
-	}
-	defer rows.Close()
-
-	var names []string
-	for rows.Next() {
+	return list(ctx, s.q(ctx), "Environments", func(row pgx.Row) (string, error) {
 		var name string
-		if err = rows.Scan(&name); err != nil {
-			return nil, fmt.Errorf("read Environment: %w", err)
-		}
-		names = append(names, name)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("list Environments: %w", err)
-	}
+		err := row.Scan(&name)
 
-	return names, nil
+		return name, err
+	}, `SELECT name FROM environments ORDER BY name`)
 }
 
 // HasEnvironment reports whether the Environment exists.

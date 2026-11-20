@@ -45,39 +45,18 @@ func (s *Store) CreateOverride(ctx context.Context, o models.Override, at time.T
 
 // Overrides returns every Override of config's Items, in every Scope.
 func (s *Store) Overrides(ctx context.Context, config string) ([]models.Override, error) {
-	rows, err := s.q(ctx).Query(ctx, `
-		SELECT o.id, i.config, coalesce(o.deployable, ''), coalesce(o.environment, ''), i.name, i.type, o.value
+	return list(ctx, s.q(ctx), "Overrides of "+config, scanOverride, `
+		SELECT `+overrideColumns+`
 		FROM overrides o JOIN items i ON i.id = o.item_id
 		WHERE i.config = $1 ORDER BY o.id`, config)
-	if err != nil {
-		return nil, fmt.Errorf("list Overrides of %s: %w", config, err)
-	}
-	defer rows.Close()
-
-	var overrides []models.Override
-	for rows.Next() {
-		var o models.Override
-		if err = rows.Scan(&o.ID, &o.Scope.Config, &o.Scope.Deployable, &o.Scope.Environment,
-			&o.Item.Name, &o.Item.Type, &o.Value); err != nil {
-			return nil, fmt.Errorf("read Override of %s: %w", config, err)
-		}
-		overrides = append(overrides, o)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("list Overrides of %s: %w", config, err)
-	}
-
-	return overrides, nil
 }
 
 // Override returns Override id, locking it for the rest of the transaction.
 func (s *Store) Override(ctx context.Context, id int64) (models.Override, error) {
-	var o models.Override
-	err := s.q(ctx).QueryRow(ctx, `
-		SELECT o.id, i.config, coalesce(o.deployable, ''), coalesce(o.environment, ''), i.name, i.type, o.value
+	o, err := scanOverride(s.q(ctx).QueryRow(ctx, `
+		SELECT `+overrideColumns+`
 		FROM overrides o JOIN items i ON i.id = o.item_id
-		WHERE o.id = $1 FOR UPDATE OF o`, id,
-	).Scan(&o.ID, &o.Scope.Config, &o.Scope.Deployable, &o.Scope.Environment, &o.Item.Name, &o.Item.Type, &o.Value)
+		WHERE o.id = $1 FOR UPDATE OF o`, id))
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return models.Override{}, ErrOverrideNotFound
@@ -90,13 +69,10 @@ func (s *Store) Override(ctx context.Context, id int64) (models.Override, error)
 
 // UpdateOverride sets the value of Override id, as of time at, and returns it.
 func (s *Store) UpdateOverride(ctx context.Context, id int64, value string, at time.Time) (models.Override, error) {
-	var o models.Override
-	err := s.q(ctx).QueryRow(ctx, `
+	o, err := scanOverride(s.q(ctx).QueryRow(ctx, `
 		UPDATE overrides o SET value = $2, updated_at = $3 FROM items i
 		WHERE o.id = $1 AND i.id = o.item_id
-		RETURNING o.id, i.config, coalesce(o.deployable, ''), coalesce(o.environment, ''), i.name, i.type, o.value`,
-		id, value, at,
-	).Scan(&o.ID, &o.Scope.Config, &o.Scope.Deployable, &o.Scope.Environment, &o.Item.Name, &o.Item.Type, &o.Value)
+		RETURNING `+overrideColumns, id, value, at))
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return models.Override{}, ErrOverrideNotFound
@@ -109,13 +85,10 @@ func (s *Store) UpdateOverride(ctx context.Context, id int64, value string, at t
 
 // DeleteOverride removes Override id and returns what it was.
 func (s *Store) DeleteOverride(ctx context.Context, id int64) (models.Override, error) {
-	var o models.Override
-	err := s.q(ctx).QueryRow(ctx, `
+	o, err := scanOverride(s.q(ctx).QueryRow(ctx, `
 		WITH gone AS (DELETE FROM overrides WHERE id = $1 RETURNING *)
-		SELECT g.id, i.config, coalesce(g.deployable, ''), coalesce(g.environment, ''), i.name, i.type, g.value
-		FROM gone g JOIN items i ON i.id = g.item_id`,
-		id,
-	).Scan(&o.ID, &o.Scope.Config, &o.Scope.Deployable, &o.Scope.Environment, &o.Item.Name, &o.Item.Type, &o.Value)
+		SELECT `+overrideColumns+`
+		FROM gone o JOIN items i ON i.id = o.item_id`, id))
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return models.Override{}, ErrOverrideNotFound

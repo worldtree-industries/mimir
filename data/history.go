@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/worldtree-industries/mimir/models"
 )
 
@@ -29,7 +31,13 @@ func (s *Store) AppendHistory(ctx context.Context, e models.HistoryEntry) (model
 // History returns the entries whose Scope filter matches (see
 // [models.ScopeFilter.Matches]), oldest first.
 func (s *Store) History(ctx context.Context, filter models.ScopeFilter) ([]models.HistoryEntry, error) {
-	rows, err := s.q(ctx).Query(ctx, `
+	return list(ctx, s.q(ctx), "history", func(row pgx.Row) (models.HistoryEntry, error) {
+		var e models.HistoryEntry
+		err := row.Scan(&e.ID, &e.Time, &e.Action, &e.Scope.Config, &e.Scope.Deployable,
+			&e.Scope.Environment, &e.Item.Name, &e.Item.Type, &e.OldValue, &e.NewValue, &e.Caller)
+
+		return e, err
+	}, `
 		SELECT id, at, action, config, deployable, environment, item_name, item_type,
 			old_value, new_value, caller
 		FROM history
@@ -38,23 +46,4 @@ func (s *Store) History(ctx context.Context, filter models.ScopeFilter) ([]model
 			AND ($3::text IS NULL OR environment = $3)
 		ORDER BY id`,
 		filter.Config, filter.Deployable, filter.Environment)
-	if err != nil {
-		return nil, fmt.Errorf("list history: %w", err)
-	}
-	defer rows.Close()
-
-	entries := []models.HistoryEntry{}
-	for rows.Next() {
-		var e models.HistoryEntry
-		if err = rows.Scan(&e.ID, &e.Time, &e.Action, &e.Scope.Config, &e.Scope.Deployable,
-			&e.Scope.Environment, &e.Item.Name, &e.Item.Type, &e.OldValue, &e.NewValue, &e.Caller); err != nil {
-			return nil, fmt.Errorf("read history entry: %w", err)
-		}
-		entries = append(entries, e)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("list history: %w", err)
-	}
-
-	return entries, nil
 }

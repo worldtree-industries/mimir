@@ -105,25 +105,7 @@ func (s *Store) DeleteItem(ctx context.Context, id int64) error {
 // ExpireNamespaces removes the Namespaces last registered at or before
 // cutoff, and returns them.
 func (s *Store) ExpireNamespaces(ctx context.Context, cutoff time.Time) ([]models.Namespace, error) {
-	rows, err := s.q(ctx).Query(ctx, `
+	return list(ctx, s.q(ctx), "expired Namespaces", scanNamespace, `
 		DELETE FROM namespaces WHERE last_registered_at <= $1
-		RETURNING config, deployable, environment`, cutoff)
-	if err != nil {
-		return nil, fmt.Errorf("expire Namespaces: %w", err)
-	}
-	defer rows.Close()
-
-	var namespaces []models.Namespace
-	for rows.Next() {
-		var ns models.Namespace
-		if err = rows.Scan(&ns.Config, &ns.Deployable, &ns.Environment); err != nil {
-			return nil, fmt.Errorf("read expired Namespace: %w", err)
-		}
-		namespaces = append(namespaces, ns)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("expire Namespaces: %w", err)
-	}
-
-	return namespaces, nil
+		RETURNING `+namespaceColumns, cutoff)
 }

@@ -35,7 +35,7 @@ func newFleet(t *testing.T) *fleet {
 	for _, d := range []string{deployableA, deployableB} {
 		for _, env := range []string{envDev, envProd} {
 			running := f.h.NewDeployable(t, systemtest.Deployable{Name: d, Environment: env})
-			f.cfgs[fooNamespace(d, env)] = foo.NewFooConfig(t.Context(), running.ClientOptions()...)
+			f.cfgs[fleetNamespace(d, env)] = foo.NewFooConfig(t.Context(), running.ClientOptions()...)
 			if err := running.AwaitRegistration(t); err != nil {
 				t.Fatalf("Registration of %s in %s failed: %v", d, env, err)
 			}
@@ -45,7 +45,7 @@ func newFleet(t *testing.T) *fleet {
 	return f
 }
 
-func fooNamespace(deployable, environment string) models.Namespace {
+func fleetNamespace(deployable, environment string) models.Namespace {
 	return models.Namespace{Config: foo.FooConfigName, Deployable: deployable, Environment: environment}
 }
 
@@ -233,14 +233,14 @@ func TestPrecedenceIsPerItem(t *testing.T) {
 	})
 	f.h.NextPoll(t)
 
-	cfg := f.cfgs[fooNamespace(deployableA, envProd)]
+	cfg := f.cfgs[fleetNamespace(deployableA, envProd)]
 	if got := cfg.GetFoo(); got != "tuned" {
 		t.Errorf("foo = %q, want the Config-wide Override %q", got, "tuned")
 	}
 	if got := cfg.GetBar(); got != 7 {
 		t.Errorf("bar = %d, want the Environment Override 7", got)
 	}
-	if got := f.cfgs[fooNamespace(deployableA, envDev)].GetBar(); got != 55555 {
+	if got := f.cfgs[fleetNamespace(deployableA, envDev)].GetBar(); got != 55555 {
 		t.Errorf("bar in dev = %d, want its Default 55555", got)
 	}
 }
@@ -344,10 +344,7 @@ func (f *fleet) publishedAfter(t *testing.T, change func()) []string {
 	t.Helper()
 
 	for ns := range f.cfgs {
-		loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
-		if err := f.h.Store.Delete(t.Context(), loc.Bucket, loc.Key); err != nil {
-			t.Fatalf("clear Snapshot of %v: %v", ns, err)
-		}
+		f.h.DeleteSnapshot(t, ns)
 	}
 	change()
 
@@ -428,10 +425,7 @@ func TestChangeToOneConfigLeavesAnotherConfigsSnapshotsAlone(t *testing.T) {
 	if status != http.StatusNoContent {
 		t.Fatalf("register other Config: status %d, body %s", status, body)
 	}
-	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, other)
-	if err := f.h.Store.Delete(t.Context(), loc.Bucket, loc.Key); err != nil {
-		t.Fatal(err)
-	}
+	f.h.DeleteSnapshot(t, other)
 
 	f.h.CreateOverride(t, scopedOverride("", "", "tuned"))
 
@@ -586,11 +580,11 @@ func TestExplainSaysWhereEachItemsValueComesFrom(t *testing.T) {
 	})
 
 	t.Run("an Override that won over a less specific one", func(t *testing.T) {
-		e, status := f.explain(t, fooNamespace(deployableA, envDev))
+		e, status := f.explain(t, fleetNamespace(deployableA, envDev))
 		if status != http.StatusOK {
 			t.Fatalf("explain: status %d", status)
 		}
-		if e.Namespace != fooNamespace(deployableA, envDev) {
+		if e.Namespace != fleetNamespace(deployableA, envDev) {
 			t.Errorf("explained Namespace = %+v", e.Namespace)
 		}
 		fooItem := source(t, e, "foo")
@@ -601,7 +595,7 @@ func TestExplainSaysWhereEachItemsValueComesFrom(t *testing.T) {
 	})
 
 	t.Run("an Item with no applicable Override has its Default", func(t *testing.T) {
-		e, _ := f.explain(t, fooNamespace(deployableA, envDev))
+		e, _ := f.explain(t, fleetNamespace(deployableA, envDev))
 		bar := source(t, e, "bar")
 		if bar.Value != "55555" || bar.Default != "55555" || bar.Source.Kind != models.SourceDefault ||
 			bar.Source.Override != nil {
@@ -610,7 +604,7 @@ func TestExplainSaysWhereEachItemsValueComesFrom(t *testing.T) {
 	})
 
 	t.Run("an Override that covers only some Namespaces", func(t *testing.T) {
-		e, _ := f.explain(t, fooNamespace(deployableB, envProd))
+		e, _ := f.explain(t, fleetNamespace(deployableB, envProd))
 		bar := source(t, e, "bar")
 		if bar.Value != "7" || bar.Default != "55555" || bar.Source.Kind != models.SourceOverride {
 			t.Errorf("bar in prod = %+v, want 7 from an Override, with Default 55555", bar)
@@ -621,7 +615,7 @@ func TestExplainSaysWhereEachItemsValueComesFrom(t *testing.T) {
 	})
 
 	t.Run("it lists every Item of the Config", func(t *testing.T) {
-		e, _ := f.explain(t, fooNamespace(deployableA, envDev))
+		e, _ := f.explain(t, fleetNamespace(deployableA, envDev))
 		var names []string
 		for _, item := range e.Items {
 			names = append(names, item.Item.Name)
@@ -650,7 +644,7 @@ func TestExplainAgreesWithThePublishedSnapshot(t *testing.T) {
 func TestExplainOfAnUnknownNamespaceIsNotFound(t *testing.T) {
 	f := newFleet(t)
 
-	if _, status := f.explain(t, fooNamespace("nobody", envDev)); status != http.StatusNotFound {
+	if _, status := f.explain(t, fleetNamespace("nobody", envDev)); status != http.StatusNotFound {
 		t.Errorf("explain unknown Namespace: status %d, want 404", status)
 	}
 }

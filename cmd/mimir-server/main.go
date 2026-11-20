@@ -1,6 +1,7 @@
 // Command mimir-server is an HTTP server, a Deployable. It accepts
 // Registration and the admin API, stores Overrides in Postgres
-// (DATABASE_URL), and publishes Snapshots to object storage. It serves
+// (DATABASE_URL), and publishes Snapshots to object storage, which must be
+// configured: it refuses to start without (see server.ConfigFromEnv). It serves
 // mjolnir's probes (/livez, /readyz and /startupz) and drains gracefully on
 // SIGTERM.
 package main
@@ -18,7 +19,6 @@ import (
 	"github.com/dfryer1193/mjolnir/utils/log"
 
 	"github.com/worldtree-industries/mimir/internal/clock"
-	"github.com/worldtree-industries/mimir/internal/objectstore"
 	"github.com/worldtree-industries/mimir/internal/server"
 )
 
@@ -45,24 +45,15 @@ func run(ctx context.Context, lg *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	var store objectstore.Store = objectstore.NewMemory()
-	if objectstore.S3Configured(os.Getenv) {
-		s3, s3Err := objectstore.NewS3FromEnv(ctx, os.Getenv)
-		if s3Err != nil {
-			return fmt.Errorf("configure object storage: %w", s3Err)
-		}
-		store = s3
-	} else {
-		// Snapshots only live in this process, so no client can read them.
-		lg.WarnContext(ctx, "No S3 storage configured; Snapshots are kept in memory only")
+	cfg, err := server.ConfigFromEnv(ctx, os.Getenv)
+	if err != nil {
+		return err
 	}
+	cfg.Pool = pool
+	cfg.Clock = clock.Real()
+	cfg.Logger = lg
 
-	r, err := server.New(ctx, server.Config{
-		Pool:        pool,
-		ObjectStore: store,
-		Clock:       clock.Real(),
-		Logger:      lg,
-	})
+	r, err := server.New(ctx, cfg)
 	if err != nil {
 		return err
 	}

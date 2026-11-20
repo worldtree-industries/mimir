@@ -93,3 +93,27 @@ func TestOverrideOfUnregisteredItemIsRejected(t *testing.T) {
 		t.Errorf("create Override of an unregistered Item: status %d, want 422; body %s", status, body)
 	}
 }
+
+func TestServerPublishesUnderItsConfiguredBucketPrefix(t *testing.T) {
+	h := systemtest.New(t, systemtest.WithBucketPrefix("acme-config"))
+	d := h.NewDeployable(t, systemtest.Deployable{
+		Name:        "foo-consumer",
+		Environment: "dev",
+		Env:         map[string]string{"MIMIR_BUCKET_PREFIX": "acme-config"},
+	})
+	cfg := foo.NewFooConfig(t.Context(), d.ClientOptions()...)
+	if err := d.AwaitRegistration(t); err != nil {
+		t.Fatalf("Registration failed: %v", err)
+	}
+
+	h.CreateOverride(t, fooOverride("tuned"))
+	h.NextPoll(t)
+
+	if got := cfg.GetFoo(); got != "tuned" {
+		t.Errorf("GetFoo() = %q, want %q read from acme-config-dev", got, "tuned")
+	}
+	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, fooConsumerDev)
+	if _, err := h.Store.Get(t.Context(), loc.Bucket, loc.Key, ""); err == nil {
+		t.Errorf("a Snapshot was published to %s, outside the configured prefix", loc.Bucket)
+	}
+}

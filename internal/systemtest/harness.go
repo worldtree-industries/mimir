@@ -58,6 +58,7 @@ type Harness struct {
 	URL string
 
 	served *faultyStore
+	prefix string
 	dsn    string
 	pool   *db.Pool
 
@@ -69,9 +70,19 @@ type Harness struct {
 	endpoints   map[string]*objectstore.Memory
 }
 
+// Option configures a Harness.
+type Option func(*Harness)
+
+// WithBucketPrefix makes the servers publish under bucket prefix prefix
+// rather than the Default, as MIMIR_BUCKET_PREFIX does. The Harness's
+// Snapshot helpers read and write there too.
+func WithBucketPrefix(prefix string) Option {
+	return func(h *Harness) { h.prefix = prefix }
+}
+
 // New starts mimir-server in-process against a fresh database, and stops it
 // when the test ends. It skips the test when DATABASE_URL is unset.
-func New(t *testing.T) *Harness {
+func New(t *testing.T, opts ...Option) *Harness {
 	t.Helper()
 
 	dsn := throwawayDatabase(t)
@@ -80,7 +91,11 @@ func New(t *testing.T) *Harness {
 		Store:  store,
 		Clock:  clock.NewFake(Epoch),
 		served: &faultyStore{Store: store},
+		prefix: models.DefaultBucketPrefix,
 		dsn:    dsn,
+	}
+	for _, opt := range opts {
+		opt(h)
 	}
 
 	primary := h.startServer(t)
@@ -127,10 +142,11 @@ func (h *Harness) startServer(t *testing.T) *Replica {
 	}
 
 	handler, err := server.New(t.Context(), server.Config{
-		Pool:        pool,
-		ObjectStore: h.served,
-		Clock:       h.Clock,
-		Logger:      log.GetLoggerTo("mimir-server", t.Output()),
+		Pool:         pool,
+		ObjectStore:  h.served,
+		BucketPrefix: h.prefix,
+		Clock:        h.Clock,
+		Logger:       log.GetLoggerTo("mimir-server", t.Output()),
 		OnReconcile: func() {
 			select {
 			case r.reconciled <- struct{}{}:
@@ -408,7 +424,7 @@ func (h *Harness) Ready(t *testing.T) int {
 func (h *Harness) DeleteSnapshot(t *testing.T, ns models.Namespace) {
 	t.Helper()
 
-	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
+	loc := models.SnapshotLocationFor(h.prefix, ns)
 	if err := h.Store.Delete(t.Context(), loc.Bucket, loc.Key); err != nil {
 		t.Fatalf("delete Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
 	}
@@ -418,7 +434,7 @@ func (h *Harness) DeleteSnapshot(t *testing.T, ns models.Namespace) {
 func (h *Harness) SnapshotETag(t *testing.T, ns models.Namespace) string {
 	t.Helper()
 
-	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
+	loc := models.SnapshotLocationFor(h.prefix, ns)
 	obj, err := h.Store.Get(t.Context(), loc.Bucket, loc.Key, "")
 	if err != nil {
 		t.Fatalf("read Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
@@ -497,7 +513,7 @@ func post(t *testing.T, baseURL, path string, payload any) (int, []byte) {
 func (h *Harness) Snapshot(t *testing.T, ns models.Namespace) (models.Snapshot, bool) {
 	t.Helper()
 
-	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
+	loc := models.SnapshotLocationFor(h.prefix, ns)
 	obj, err := h.Store.Get(t.Context(), loc.Bucket, loc.Key, "")
 	if errors.Is(err, objectstore.ErrNotFound) {
 		return models.Snapshot{}, false
@@ -519,7 +535,7 @@ func (h *Harness) Snapshot(t *testing.T, ns models.Namespace) (models.Snapshot, 
 func (h *Harness) PutSnapshot(t *testing.T, ns models.Namespace, snap models.Snapshot) {
 	t.Helper()
 
-	h.PutSnapshotAt(t, h.Store, models.DefaultBucketPrefix, ns, snap)
+	h.PutSnapshotAt(t, h.Store, h.prefix, ns, snap)
 }
 
 func await(t *testing.T, ch <-chan error, what string) error {

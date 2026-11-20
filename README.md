@@ -104,7 +104,19 @@ To react to changes and errors, pass `client.WithEventHandler` to the constructo
 
 ## mimir-server
 
-`mimir-server` stores Registrations and Overrides in Postgres (`DATABASE_URL`; it migrates the schema at startup) and publishes each Namespace's Snapshot to object storage: after the Namespace's first Registration, and after every change to an Override whose Scope covers it. `/readyz` answers 200 only while Postgres and the bucket of every Environment answer, even before anything has registered. Its API, for the private network only (there is no authentication yet):
+`mimir-server` stores Registrations and Overrides in Postgres (`DATABASE_URL`; it migrates the schema at startup) and publishes each Namespace's Snapshot to object storage: after the Namespace's first Registration, and after every change to an Override whose Scope covers it. `/readyz` answers 200 only while Postgres and the bucket of every Environment answer, even before anything has registered.
+
+It reads its settings from the environment, and refuses to start if one is unusable or object storage isn't configured (see [Object storage](#object-storage)):
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `DATABASE_URL` | Postgres connection string. | required |
+| `PORT` | Port to listen on. | `8080` |
+| `MIMIR_BUCKET_PREFIX` | Prefix of each Environment's bucket, `<prefix>-<environment>`. Set clients' `MIMIR_BUCKET_PREFIX` to match. | `mimir` |
+| `MIMIR_RECONCILE_INTERVAL` | How often every Snapshot is republished from Postgres, as a Go duration. | `5m` |
+| `MIMIR_EXPIRY_INTERVAL` | How often the server expires what went unregistered for 60 days, as a Go duration. | `1h` |
+
+Its API, for the private network only (there is no authentication yet):
 
 - `POST /v1/registrations`: Registration, sent by clients.
 - `POST /v1/overrides`: create an Override, for example a Config-wide one:
@@ -114,7 +126,7 @@ To react to changes and errors, pass `client.WithEventHandler` to the constructo
   The Item must be registered. Errors are RFC 9457 problem documents.
 - `GET /v1/configs`, `GET /v1/items`, `GET /v1/namespaces`: what Registration taught the server, with when each Item and Namespace was first and last registered. `items` and `namespaces` take an optional `config` query parameter.
 
-Registration only adds: a version that drops an Item leaves it and its Overrides in place. Once an hour the server expires what no Deployable has registered for 60 days. An Item goes with its Overrides (each recorded in the History as `expired`, with Caller `mimir-server:expiry`) and the Snapshots that held them are republished; a Namespace goes with its Snapshot in object storage.
+Registration only adds: a version that drops an Item leaves it and its Overrides in place. Once an hour (`MIMIR_EXPIRY_INTERVAL`) the server expires what no Deployable has registered for 60 days. An Item goes with its Overrides (each recorded in the History as `expired`, with Caller `mimir-server:expiry`) and the Snapshots that held them are republished; a Namespace goes with its Snapshot in object storage.
 
   Narrow the Scope with `"deployable"`, `"environment"` or both. When several Overrides apply to an Item in a Namespace, the most specific Scope wins: Deployable and Environment, then Deployable, then Environment, then Config-wide (ADR 0003).
 - `PUT /v1/overrides/{id}`: set an Override's value (`{"value": "600"}`). `DELETE /v1/overrides/{id}` removes it; the next most specific Override, or the Default, takes effect.
@@ -134,9 +146,9 @@ Snapshots live in S3-API object storage, such as Rook/Ceph RGW. `mimir-server` a
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Credentials. |
 | `AWS_REGION` | Region; defaults to `us-east-1`, which Ceph ignores. |
 
-Addressing is path-style, so no wildcard DNS is needed. Without any of these, the server keeps Snapshots in memory only (nothing a client can read) and clients run on Defaults.
+Addressing is path-style, so no wildcard DNS is needed. Without any of these, `mimir-server` refuses to start and clients run on Defaults.
 
-Buckets are named `<prefix>-<environment>`; the prefix is `mimir`, so `mimir-dev`, `mimir-prod`. Create them yourself: Mimir doesn't. The server needs read, write and delete on them, and clients read-only.
+Buckets are named `<prefix>-<environment>`; the prefix is `mimir` unless `MIMIR_BUCKET_PREFIX` says otherwise, so `mimir-dev`, `mimir-prod`. Create them yourself: Mimir doesn't. The server needs read, write and delete on them, and clients read-only.
 
 ## Config file format
 

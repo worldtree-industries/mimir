@@ -28,6 +28,9 @@ type Config struct {
 	Pool *db.Pool
 	// ObjectStore is where Snapshots are published.
 	ObjectStore objectstore.Store
+	// BucketPrefix is the prefix of each Environment's bucket (ADR 0006).
+	// Empty means models.DefaultBucketPrefix.
+	BucketPrefix string
 	// Clock is the server's time source.
 	Clock clock.Clock
 	// Logger receives the server's logs, including access lines.
@@ -64,9 +67,13 @@ func New(ctx context.Context, cfg Config) (*router.Router, error) {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 
+	prefix := cfg.BucketPrefix
+	if prefix == "" {
+		prefix = models.DefaultBucketPrefix
+	}
 	svc := service.New(service.Config{
 		Store:     store,
-		Snapshots: data.NewSnapshots(cfg.ObjectStore, models.DefaultBucketPrefix),
+		Snapshots: data.NewSnapshots(cfg.ObjectStore, prefix),
 		Clock:     cfg.Clock,
 		Logger:    cfg.Logger,
 	})

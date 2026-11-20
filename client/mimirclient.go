@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"regexp"
 	"sync"
 	"time"
 
@@ -53,14 +52,9 @@ const (
 // Override can't have every pod hammer object storage.
 const minPollInterval = time.Second
 
-// bucketPrefixPattern is what a bucket prefix may look like: the start of an
-// S3 bucket name.
-var bucketPrefixPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*$`)
-
 var (
 	errPollInterval = errors.New("poll interval must be a Go duration of at least " + minPollInterval.String())
 	errURL          = errors.New("must be an absolute http or https URL")
-	errBucketPrefix = errors.New("bucket prefix must be lowercase letters, digits, '.' and '-'")
 )
 
 // location is where a client reads Snapshots: an object storage endpoint
@@ -185,8 +179,8 @@ func (s *settings) setEndpoint(value string) error {
 }
 
 func (s *settings) setBucketPrefix(value string) error {
-	if !bucketPrefixPattern.MatchString(value) {
-		return errBucketPrefix
+	if err := models.CheckBucketPrefix(value); err != nil {
+		return err
 	}
 
 	s.mu.Lock()

@@ -16,8 +16,6 @@ import (
 
 	"github.com/worldtree-industries/mimir/api"
 	"github.com/worldtree-industries/mimir/data"
-	"github.com/worldtree-industries/mimir/internal/clock"
-	"github.com/worldtree-industries/mimir/internal/objectstore"
 	"github.com/worldtree-industries/mimir/models"
 	"github.com/worldtree-industries/mimir/service"
 )
@@ -27,12 +25,12 @@ type Config struct {
 	// Pool is the Postgres pool. New migrates its schema.
 	Pool *db.Pool
 	// ObjectStore is where Snapshots are published.
-	ObjectStore objectstore.Store
+	ObjectStore models.ObjectStore
 	// BucketPrefix is the prefix of each Environment's bucket (ADR 0006).
 	// Empty means models.DefaultBucketPrefix.
 	BucketPrefix string
 	// Clock is the server's time source.
-	Clock clock.Clock
+	Clock models.Clock
 	// Logger receives the server's logs, including access lines.
 	Logger *slog.Logger
 	// ReconcileInterval is how often every Snapshot is republished from

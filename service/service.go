@@ -5,7 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/worldtree-industries/mimir/data"
-	"github.com/worldtree-industries/mimir/internal/clock"
+	"github.com/worldtree-industries/mimir/models"
 )
 
 // ErrInvalid means a request is malformed or incomplete. It is wrapped with
@@ -28,7 +28,7 @@ var ErrUnknownNamespace = errors.New("no such Namespace")
 type Config struct {
 	Store     *data.Store
 	Snapshots *data.Snapshots
-	Clock     clock.Clock
+	Clock     models.Clock
 	Logger    *slog.Logger
 }
 
@@ -39,7 +39,7 @@ type Config struct {
 type Service struct {
 	store     *data.Store
 	snapshots *data.Snapshots
-	clock     clock.Clock
+	clock     models.Clock
 	logger    *slog.Logger
 	ready     readyCache
 }

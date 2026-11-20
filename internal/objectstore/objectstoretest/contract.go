@@ -1,23 +1,24 @@
-// Package objectstoretest is the contract every [objectstore.Store]
-// implementation must meet. Each implementation's tests call Run.
+// Package objectstoretest is the contract every [models.ObjectStore]
+// implementation must meet (each implementation's tests call Run), and
+// FakeS3, a path-style S3 endpoint for tests.
 package objectstoretest
 
 import (
 	"errors"
 	"testing"
 
-	"github.com/worldtree-industries/mimir/internal/objectstore"
+	"github.com/worldtree-industries/mimir/models"
 )
 
 // Run checks store against the object storage contract. bucket must be a
 // bucket the store can write to; the contract writes only keys under
 // "objectstoretest/".
-func Run(t *testing.T, store objectstore.Store, bucket string) {
+func Run(t *testing.T, store models.ObjectStore, bucket string) {
 	t.Helper()
 
 	t.Run("get of a missing object is not found", func(t *testing.T) {
 		_, err := store.Get(t.Context(), bucket, "objectstoretest/missing.json", "")
-		if !errors.Is(err, objectstore.ErrNotFound) {
+		if !errors.Is(err, models.ErrNotFound) {
 			t.Fatalf("Get missing: err = %v, want ErrNotFound", err)
 		}
 	})
@@ -41,7 +42,7 @@ func Run(t *testing.T, store objectstore.Store, bucket string) {
 		first := get(t, store, bucket, key, "")
 
 		_, err := store.Get(t.Context(), bucket, key, first.ETag)
-		if !errors.Is(err, objectstore.ErrNotModified) {
+		if !errors.Is(err, models.ErrNotModified) {
 			t.Fatalf("Get with current ETag: err = %v, want ErrNotModified", err)
 		}
 
@@ -62,7 +63,7 @@ func Run(t *testing.T, store objectstore.Store, bucket string) {
 		if err := store.Delete(t.Context(), bucket, key); err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
-		if _, err := store.Get(t.Context(), bucket, key, ""); !errors.Is(err, objectstore.ErrNotFound) {
+		if _, err := store.Get(t.Context(), bucket, key, ""); !errors.Is(err, models.ErrNotFound) {
 			t.Errorf("Get after Delete: err = %v, want ErrNotFound", err)
 		}
 		if err := store.Delete(t.Context(), bucket, key); err != nil {
@@ -71,7 +72,7 @@ func Run(t *testing.T, store objectstore.Store, bucket string) {
 	})
 }
 
-func put(t *testing.T, store objectstore.Store, bucket, key, body string) {
+func put(t *testing.T, store models.ObjectStore, bucket, key, body string) {
 	t.Helper()
 
 	if err := store.Put(t.Context(), bucket, key, []byte(body)); err != nil {
@@ -79,7 +80,7 @@ func put(t *testing.T, store objectstore.Store, bucket, key, body string) {
 	}
 }
 
-func get(t *testing.T, store objectstore.Store, bucket, key, etag string) objectstore.Object {
+func get(t *testing.T, store models.ObjectStore, bucket, key, etag string) models.Object {
 	t.Helper()
 
 	obj, err := store.Get(t.Context(), bucket, key, etag)

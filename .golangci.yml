@@ -296,6 +296,8 @@ linters:
               desc: client may import only models
             - pkg: github.com/worldtree-industries/mimir/data/
               desc: client may import only models
+            - pkg: github.com/worldtree-industries/mimir/internal
+              desc: client may import only models; other Projects can't use internal types
 
     embeddedstructfieldcheck:
       # Checks that sync.Mutex and sync.RWMutex are not used as embedded fields.

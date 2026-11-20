@@ -1,5 +1,6 @@
-// Package clock is the time source mimir-server and the client are given, so
-// tests can drive polling, re-registration and expiry without sleeping.
+// Package clock holds the [models.Clock] implementations mimir-server and the
+// tests use: the system clock, and a Fake that tests drive so polling,
+// re-registration and expiry happen without sleeping.
 //
 // Like objectstore it is shared infrastructure, not a Layer.
 package clock
@@ -8,18 +9,14 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/worldtree-industries/mimir/models"
 )
 
-// Clock tells the time and waits.
-type Clock interface {
-	// Now returns the current time.
-	Now() time.Time
-	// After returns a channel that receives the time once d has passed.
-	After(d time.Duration) <-chan time.Time
-}
+var _ models.Clock = (*Fake)(nil)
 
 // Real returns the system clock.
-func Real() Clock {
+func Real() models.Clock {
 	return realClock{}
 }
 

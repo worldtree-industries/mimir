@@ -13,19 +13,21 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/logging"
+
+	"github.com/worldtree-industries/mimir/models"
 )
 
 // defaultRegion is used when AWS_REGION is not set; Ceph RGW ignores it but
 // the SDK insists on one.
 const defaultRegion = "us-east-1"
 
-// S3 is a [Store] over the S3 API, such as Ceph RGW's. Buckets must already
+// S3 is a [models.ObjectStore] over the S3 API, such as Ceph RGW's. Buckets must already
 // exist.
 type S3 struct {
 	client *s3.Client
 }
 
-var _ Store = (*S3)(nil)
+var _ models.ObjectStore = (*S3)(nil)
 
 // S3Configured reports whether getenv holds any S3 settings: an endpoint
 // (AWS_ENDPOINT_URL_S3 or AWS_ENDPOINT_URL) or credentials
@@ -73,7 +75,7 @@ func NewS3FromEnv(ctx context.Context, getenv func(string) string) (*S3, error) 
 	return &S3{client: client}, nil
 }
 
-// Put implements [Store].
+// Put implements [models.ObjectStore].
 func (s *S3) Put(ctx context.Context, bucket, key string, body []byte) error {
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(bucket),
@@ -88,34 +90,34 @@ func (s *S3) Put(ctx context.Context, bucket, key string, body []byte) error {
 	return nil
 }
 
-// Get implements [Store].
-func (s *S3) Get(ctx context.Context, bucket, key, etag string) (Object, error) {
+// Get implements [models.ObjectStore].
+func (s *S3) Get(ctx context.Context, bucket, key, etag string) (models.Object, error) {
 	in := &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)}
 	if etag != "" {
 		in.IfNoneMatch = aws.String(etag)
 	}
 	out, err := s.client.GetObject(ctx, in)
 	if err != nil {
-		return Object{}, mapS3Error(bucket, key, err)
+		return models.Object{}, mapS3Error(bucket, key, err)
 	}
 	defer func() { _ = out.Body.Close() }()
 
 	body, err := io.ReadAll(out.Body)
 	if err != nil {
-		return Object{}, fmt.Errorf("read s3://%s/%s: %w", bucket, key, err)
+		return models.Object{}, fmt.Errorf("read s3://%s/%s: %w", bucket, key, err)
 	}
 
-	return Object{Body: body, ETag: aws.ToString(out.ETag)}, nil
+	return models.Object{Body: body, ETag: aws.ToString(out.ETag)}, nil
 }
 
-// Delete implements [Store].
+// Delete implements [models.ObjectStore].
 func (s *S3) Delete(ctx context.Context, bucket, key string) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		if errors.Is(mapS3Error(bucket, key, err), ErrNotFound) {
+		if errors.Is(mapS3Error(bucket, key, err), models.ErrNotFound) {
 			return nil
 		}
 
@@ -126,18 +128,18 @@ func (s *S3) Delete(ctx context.Context, bucket, key string) error {
 }
 
 // mapS3Error turns the SDK's errors into the package's sentinels: a missing
-// key is ErrNotFound and a failed If-None-Match is ErrNotModified. A missing
-// bucket is deliberately not ErrNotFound: that is a deployment fault.
+// key is models.ErrNotFound and a failed If-None-Match is models.ErrNotModified. A missing
+// bucket is deliberately not models.ErrNotFound: that is a deployment fault.
 func mapS3Error(bucket, key string, err error) error {
 	var respErr interface{ HTTPStatusCode() int }
 	if errors.As(err, &respErr) && respErr.HTTPStatusCode() == http.StatusNotModified {
-		return ErrNotModified
+		return models.ErrNotModified
 	}
 
 	if apiErr, ok := errors.AsType[smithy.APIError](err); ok {
 		switch apiErr.ErrorCode() {
 		case "NoSuchKey", "NotFound":
-			return ErrNotFound
+			return models.ErrNotFound
 		}
 	}
 

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/worldtree-industries/mimir/internal/objectstore"
 	"github.com/worldtree-industries/mimir/models"
 )
 
@@ -77,7 +76,7 @@ func (c *Client) switchTo(ctx context.Context, loc location) bool {
 
 // storeFor is the object storage at loc's endpoint: the current store if
 // the endpoint is unchanged, or else a new one.
-func (c *Client) storeFor(ctx context.Context, loc location) (objectstore.Store, error) {
+func (c *Client) storeFor(ctx context.Context, loc location) (models.ObjectReader, error) {
 	if loc.endpoint == c.at.endpoint {
 		return c.store, nil
 	}
@@ -140,13 +139,13 @@ type fetched struct {
 
 // fetch reads the Config's Snapshot from store with bucket prefix prefix. A
 // missing Snapshot is an empty one: no Overrides.
-func (p *configPoll) fetch(ctx context.Context, store objectstore.Store, prefix, etag string) (fetched, error) {
+func (p *configPoll) fetch(ctx context.Context, store models.ObjectReader, prefix, etag string) (fetched, error) {
 	loc := models.SnapshotLocationFor(prefix, p.ns)
 	obj, err := store.Get(ctx, loc.Bucket, loc.Key, etag)
 	switch {
-	case errors.Is(err, objectstore.ErrNotModified):
+	case errors.Is(err, models.ErrNotModified):
 		return fetched{unchanged: true}, nil
-	case errors.Is(err, objectstore.ErrNotFound):
+	case errors.Is(err, models.ErrNotFound):
 		return fetched{}, nil
 	case err != nil:
 		return fetched{}, fmt.Errorf("read Snapshot %s/%s: %w", loc.Bucket, loc.Key, err)
@@ -164,7 +163,7 @@ func (p *configPoll) fetch(ctx context.Context, store objectstore.Store, prefix,
 // Overrides, so every Item takes its start value; an unchanged Snapshot
 // changes nothing; any other failure is logged, returned, and keeps the
 // current values.
-func (p *configPoll) poll(ctx context.Context, store objectstore.Store, prefix string) error {
+func (p *configPoll) poll(ctx context.Context, store models.ObjectReader, prefix string) error {
 	f, err := p.fetch(ctx, store, prefix, p.etag)
 	if err != nil {
 		level := slog.LevelWarn

@@ -6,14 +6,17 @@ import (
 	"encoding/hex"
 	"slices"
 	"sync"
+
+	"github.com/worldtree-industries/mimir/models"
 )
 
-// Memory is a [Store] held in memory. Tests share one between mimir-server
-// and the clients they run, and inject faults into it with SetGetFault.
+// Memory is a [models.ObjectStore] held in memory. Tests share one between
+// mimir-server and the clients they run, and inject faults into it with
+// SetGetFault.
 // Buckets need no creating. The zero value is not usable; call NewMemory.
 type Memory struct {
 	mu       sync.RWMutex
-	objects  map[location]Object
+	objects  map[location]models.Object
 	getFault GetFault
 }
 
@@ -28,7 +31,7 @@ type location struct {
 
 // NewMemory returns an empty in-memory store.
 func NewMemory() *Memory {
-	return &Memory{objects: make(map[location]Object)}
+	return &Memory{objects: make(map[location]models.Object)}
 }
 
 // Put stores a copy of body at bucket/key. Its ETag is the body's SHA-256, so
@@ -39,20 +42,23 @@ func (m *Memory) Put(_ context.Context, bucket, key string, body []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.objects[location{bucket, key}] = Object{Body: slices.Clone(body), ETag: `"` + hex.EncodeToString(sum[:]) + `"`}
+	m.objects[location{bucket, key}] = models.Object{
+		Body: slices.Clone(body),
+		ETag: `"` + hex.EncodeToString(sum[:]) + `"`,
+	}
 
 	return nil
 }
 
-// Get returns a copy of the object at bucket/key, following the [Store]
-// contract for etag.
-func (m *Memory) Get(_ context.Context, bucket, key, etag string) (Object, error) {
+// Get returns a copy of the object at bucket/key, following the
+// [models.ObjectReader] contract for etag.
+func (m *Memory) Get(_ context.Context, bucket, key, etag string) (models.Object, error) {
 	m.mu.RLock()
 	fault := m.getFault
 	m.mu.RUnlock()
 	if fault != nil {
 		if err := fault(bucket, key, etag); err != nil {
-			return Object{}, err
+			return models.Object{}, err
 		}
 	}
 
@@ -62,12 +68,12 @@ func (m *Memory) Get(_ context.Context, bucket, key, etag string) (Object, error
 	obj, ok := m.objects[location{bucket, key}]
 	switch {
 	case !ok:
-		return Object{}, ErrNotFound
+		return models.Object{}, models.ErrNotFound
 	case etag != "" && etag == obj.ETag:
-		return Object{}, ErrNotModified
+		return models.Object{}, models.ErrNotModified
 	}
 
-	return Object{Body: slices.Clone(obj.Body), ETag: obj.ETag}, nil
+	return models.Object{Body: slices.Clone(obj.Body), ETag: obj.ETag}, nil
 }
 
 // Delete removes the object at bucket/key, if there is one.

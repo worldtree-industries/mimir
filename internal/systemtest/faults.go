@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/worldtree-industries/mimir/internal/objectstore"
+	"github.com/worldtree-industries/mimir/models"
 )
 
 // errInjected is what a faulty store returns while a fault is switched on.
@@ -21,7 +21,7 @@ var errUnreachable = errors.New("systemtest: no object storage at this endpoint"
 // can make uploads or the whole of object storage fail. Clients and the
 // test's own reads go to the wrapped store directly.
 type faultyStore struct {
-	objectstore.Store
+	models.ObjectStore
 
 	failUploads atomic.Bool
 	failAll     atomic.Bool
@@ -42,16 +42,16 @@ func (f *faultyStore) Put(ctx context.Context, bucket, key string, body []byte) 
 		return errInjected
 	}
 
-	return f.Store.Put(ctx, bucket, key, body)
+	return f.ObjectStore.Put(ctx, bucket, key, body)
 }
 
-func (f *faultyStore) Get(ctx context.Context, bucket, key, etag string) (objectstore.Object, error) {
+func (f *faultyStore) Get(ctx context.Context, bucket, key, etag string) (models.Object, error) {
 	f.calls.Add(1)
 	if f.failAll.Load() {
-		return objectstore.Object{}, errInjected
+		return models.Object{}, errInjected
 	}
 
-	return f.Store.Get(ctx, bucket, key, etag)
+	return f.ObjectStore.Get(ctx, bucket, key, etag)
 }
 
 func (f *faultyStore) Delete(ctx context.Context, bucket, key string) error {
@@ -60,7 +60,7 @@ func (f *faultyStore) Delete(ctx context.Context, bucket, key string) error {
 		return errInjected
 	}
 
-	return f.Store.Delete(ctx, bucket, key)
+	return f.ObjectStore.Delete(ctx, bucket, key)
 }
 
 // HoldUploads makes every Snapshot upload from the servers wait, so a test

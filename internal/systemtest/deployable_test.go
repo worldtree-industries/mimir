@@ -1,10 +1,12 @@
 package systemtest_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/worldtree-industries/mimir/internal/generator/testdata/foo"
+	"github.com/worldtree-industries/mimir/internal/objectstore/objectstoretest"
 	"github.com/worldtree-industries/mimir/internal/systemtest"
 	"github.com/worldtree-industries/mimir/models"
 )
@@ -121,5 +123,32 @@ func TestClientRegistersEvenWithoutObjectStorage(t *testing.T) {
 				t.Errorf("registered Namespaces = %+v, want only %+v", got, fooConsumerDev)
 			}
 		})
+	}
+}
+
+func TestClientReadsS3FromTheStandardAWSVariables(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "test")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test")
+	s3 := objectstoretest.NewFakeS3(t)
+	body, err := json.Marshal(fooSnapshot("from-s3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, fooConsumerDev)
+	s3.Put(loc.Bucket, loc.Key, body)
+
+	// No object storage is passed in: the client opens S3 from the
+	// environment, as it does in production.
+	h := systemtest.New(t)
+	d := h.NewDeployable(t, systemtest.Deployable{
+		Name:          "foo-consumer",
+		Environment:   "dev",
+		NoObjectStore: true,
+		Env:           map[string]string{"AWS_ENDPOINT_URL_S3": s3.URL},
+	})
+	cfg := foo.NewFooConfig(t.Context(), d.ClientOptions()...)
+
+	if got := cfg.GetFoo(); got != "from-s3" {
+		t.Errorf("GetFoo() = %q, want %q read from S3", got, "from-s3")
 	}
 }

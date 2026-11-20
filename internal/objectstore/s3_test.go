@@ -1,14 +1,8 @@
 package objectstore_test
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/worldtree-industries/mimir/internal/objectstore"
@@ -40,51 +34,8 @@ func TestS3MeetsContract(t *testing.T) {
 	objectstoretest.Run(t, store, bucket)
 }
 
-const noSuchKey = `<?xml version="1.0"?><Error><Code>NoSuchKey</Code><Message>missing</Message></Error>`
-
-// fakeS3 is just enough of the S3 API (path-style) to exercise S3 where no
-// real endpoint exists. It is not a substitute for TestS3MeetsContract.
-type fakeS3 struct {
-	mu      sync.Mutex
-	objects map[string][]byte
-}
-
-func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	path := r.URL.Path // /<bucket>/<key>, path-style
-	switch r.Method {
-	case http.MethodPut:
-		body, _ := io.ReadAll(r.Body)
-		f.objects[path] = body
-		w.Header().Set("ETag", etagOf(body))
-	case http.MethodGet:
-		body, ok := f.objects[path]
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = io.WriteString(w, noSuchKey)
-			return
-		}
-		w.Header().Set("ETag", etagOf(body))
-		if inm := r.Header.Get("If-None-Match"); inm != "" && inm == etagOf(body) {
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		_, _ = w.Write(body)
-	case http.MethodDelete:
-		delete(f.objects, path)
-		w.WriteHeader(http.StatusNoContent)
-	}
-}
-
-func etagOf(b []byte) string {
-	sum := sha256.Sum256(b)
-	return `"` + hex.EncodeToString(sum[:16]) + `"`
-}
-
 func TestS3AgainstPathStyleFake(t *testing.T) {
-	srv := httptest.NewServer(&fakeS3{objects: map[string][]byte{}})
-	t.Cleanup(srv.Close)
+	srv := objectstoretest.NewFakeS3(t)
 
 	t.Setenv("AWS_ACCESS_KEY_ID", "test")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "test")

@@ -9,8 +9,6 @@ import (
 
 	"github.com/dfryer1193/mjolnir/utils/log"
 
-	"github.com/worldtree-industries/mimir/internal/clock"
-	"github.com/worldtree-industries/mimir/internal/objectstore"
 	"github.com/worldtree-industries/mimir/models"
 )
 
@@ -87,10 +85,10 @@ type Event struct {
 // (poll interval, server URL, object storage endpoint and bucket prefix), in
 // the same Deployable and Environment, so those can be tuned live too.
 type Client struct {
-	clock     clock.Clock
+	clock     models.Clock
 	logger    *slog.Logger
 	onEvent   func(Event)
-	openStore func(ctx context.Context, endpoint string) (objectstore.Store, error)
+	openStore func(ctx context.Context, endpoint string) (models.ObjectReader, error)
 	http      *http.Client
 	settings  *settings
 
@@ -103,7 +101,7 @@ type Client struct {
 	// storage at its endpoint. They change only once both Snapshots have
 	// been read at the location the settings name.
 	at    location
-	store objectstore.Store
+	store models.ObjectReader
 }
 
 // Start applies the Definition's Defaults, determines the Namespace, reads the
@@ -146,7 +144,7 @@ func Start(ctx context.Context, def Definition, opts ...Option) *Client {
 	c.user.logger = c.logger
 	c.self.logger = c.logger.With("settings", MimirClientConfig)
 
-	if c.openStore == nil && (objectstore.S3Configured(o.getenv) || c.at.endpoint != "") {
+	if c.openStore == nil && (s3Configured(o.getenv) || c.at.endpoint != "") {
 		c.openStore = s3Opener(o.getenv)
 	}
 	// Registration doesn't need object storage, so it runs whatever happens
@@ -195,29 +193,26 @@ func (c *Client) reportSetting(e Event) {
 
 // s3Opener opens S3 object storage from the standard AWS environment
 // variables, with the endpoint replaced when one is given.
-func s3Opener(getenv func(string) string) func(context.Context, string) (objectstore.Store, error) {
-	return func(ctx context.Context, endpoint string) (objectstore.Store, error) {
-		env := getenv
-		if endpoint != "" {
-			env = func(key string) string {
-				if key == "AWS_ENDPOINT_URL_S3" {
-					return endpoint
-				}
-				return getenv(key)
-			}
-		}
-
-		return objectstore.NewS3FromEnv(ctx, env)
+func s3Opener(getenv func(string) string) func(context.Context, string) (models.ObjectReader, error) {
+	return func(ctx context.Context, endpoint string) (models.ObjectReader, error) {
+		return newS3Reader(ctx, getenv, endpoint)
 	}
 }
+
+// realClock is the system clock.
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now() }
+
+func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 // Option configures Start. The defaults suit production; the options exist
 // mostly so tests can place a client in a controlled world.
 type Option func(*options)
 
 type options struct {
-	openStore func(ctx context.Context, endpoint string) (objectstore.Store, error)
-	clock     clock.Clock
+	openStore func(ctx context.Context, endpoint string) (models.ObjectReader, error)
+	clock     models.Clock
 	logger    *slog.Logger
 	onEvent   func(Event)
 	getenv    func(string) string
@@ -226,7 +221,7 @@ type options struct {
 
 func newOptions(opts []Option) options {
 	o := options{
-		clock:     clock.Real(),
+		clock:     realClock{},
 		logger:    log.GetLogger("mimir-client"),
 		getenv:    os.Getenv,
 		buildPath: mainPackagePath(),
@@ -238,23 +233,15 @@ func newOptions(opts []Option) options {
 	return o
 }
 
-// WithObjectStore sets the object storage Snapshots are read from, whatever
-// endpoint the client's settings name.
-func WithObjectStore(s objectstore.Store) Option {
-	return func(o *options) {
-		o.openStore = func(context.Context, string) (objectstore.Store, error) { return s, nil }
-	}
-}
-
 // WithObjectStores sets how the client opens the object storage at an
 // endpoint, as named by its settings ("" for the default endpoint). The
 // default opens S3 from the standard AWS environment variables.
-func WithObjectStores(open func(ctx context.Context, endpoint string) (objectstore.Store, error)) Option {
+func WithObjectStores(open func(ctx context.Context, endpoint string) (models.ObjectReader, error)) Option {
 	return func(o *options) { o.openStore = open }
 }
 
 // WithClock sets the clock that paces polling.
-func WithClock(c clock.Clock) Option {
+func WithClock(c models.Clock) Option {
 	return func(o *options) { o.clock = c }
 }
 

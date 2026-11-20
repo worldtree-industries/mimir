@@ -27,7 +27,7 @@ func (h *Harness) NewEndpoint(endpoint string) *objectstore.Memory {
 }
 
 // openEndpoint is how clients in the harness open object storage.
-func (h *Harness) openEndpoint(_ context.Context, endpoint string) (objectstore.Store, error) {
+func (h *Harness) openEndpoint(_ context.Context, endpoint string) (models.ObjectReader, error) {
 	if endpoint == "" {
 		return h.Store, nil
 	}
@@ -43,7 +43,7 @@ func (h *Harness) openEndpoint(_ context.Context, endpoint string) (objectstore.
 
 // CopySnapshot copies ns's published Snapshot to the bucket with prefix in
 // to, as when a location's contents are mirrored to another.
-func (h *Harness) CopySnapshot(t *testing.T, ns models.Namespace, to objectstore.Store, prefix string) {
+func (h *Harness) CopySnapshot(t *testing.T, ns models.Namespace, to models.ObjectStore, prefix string) {
 	t.Helper()
 
 	snap, ok := h.Snapshot(t, ns)
@@ -57,7 +57,7 @@ func (h *Harness) CopySnapshot(t *testing.T, ns models.Namespace, to objectstore
 // to.
 func (h *Harness) PutSnapshotAt(
 	t *testing.T,
-	to objectstore.Store,
+	to models.ObjectStore,
 	prefix string,
 	ns models.Namespace,
 	snap models.Snapshot,

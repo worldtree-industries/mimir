@@ -90,7 +90,7 @@ func New(t *testing.T, opts ...Option) *Harness {
 	h := &Harness{
 		Store:  store,
 		Clock:  clock.NewFake(Epoch),
-		served: &faultyStore{Store: store},
+		served: &faultyStore{ObjectStore: store},
 		prefix: models.DefaultBucketPrefix,
 		dsn:    dsn,
 	}
@@ -520,7 +520,7 @@ func (h *Harness) Snapshot(t *testing.T, ns models.Namespace) (models.Snapshot, 
 
 	loc := models.SnapshotLocationFor(h.prefix, ns)
 	obj, err := h.Store.Get(t.Context(), loc.Bucket, loc.Key, "")
-	if errors.Is(err, objectstore.ErrNotFound) {
+	if errors.Is(err, models.ErrNotFound) {
 		return models.Snapshot{}, false
 	}
 	if err != nil {

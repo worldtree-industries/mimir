@@ -6,20 +6,19 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/worldtree-industries/mimir/internal/objectstore"
 	"github.com/worldtree-industries/mimir/models"
 )
 
 // Snapshots writes Snapshots to object storage at the locations clients
 // construct for themselves (ADR 0006).
 type Snapshots struct {
-	store  objectstore.Store
+	store  models.ObjectStore
 	prefix string
 }
 
 // NewSnapshots returns a Snapshots writing to store under bucket prefix
 // prefix.
-func NewSnapshots(store objectstore.Store, prefix string) *Snapshots {
+func NewSnapshots(store models.ObjectStore, prefix string) *Snapshots {
 	return &Snapshots{store: store, prefix: prefix}
 }
 
@@ -59,7 +58,7 @@ func (s *Snapshots) Reachable(ctx context.Context, environment string) error {
 	bucket := models.SnapshotLocationFor(s.prefix, models.Namespace{Environment: environment}).Bucket
 
 	_, err := s.store.Get(ctx, bucket, probeKey, "")
-	if err != nil && !errors.Is(err, objectstore.ErrNotFound) && !errors.Is(err, objectstore.ErrNotModified) {
+	if err != nil && !errors.Is(err, models.ErrNotFound) && !errors.Is(err, models.ErrNotModified) {
 		return fmt.Errorf("reach object storage bucket %s: %w", bucket, err)
 	}
 

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -62,6 +63,7 @@ type Harness struct {
 	mu          sync.Mutex
 	deployables []*RunningDeployable
 	replicas    []*Replica
+	endpoints   map[string]*objectstore.Memory
 }
 
 // New starts mimir-server in-process against a fresh database, and stops it
@@ -152,6 +154,9 @@ type Deployable struct {
 	BuildPath string
 	// ServerDown points the client at a mimir-server that isn't running.
 	ServerDown bool
+	// Env holds further environment variables, such as the ones MimirClient's
+	// Items start from.
+	Env map[string]string
 }
 
 // RunningDeployable is a Deployable placed in a Harness, recording what its
@@ -164,9 +169,10 @@ type RunningDeployable struct {
 	registered chan error
 	polled     chan error
 
-	mu          sync.Mutex
-	valueEvents []client.Event
-	lastPollErr error
+	mu               sync.Mutex
+	valueEvents      []client.Event
+	locationSwitches []error
+	lastPollErr      error
 }
 
 // NewDeployable places d in h. Pass its ClientOptions to the generated
@@ -200,10 +206,11 @@ func (d *RunningDeployable) ClientOptions() []client.Option {
 		"MIMIR_ENVIRONMENT": d.Environment,
 		"MIMIR_SERVER_URL":  serverURL,
 	}
+	maps.Copy(env, d.Env)
 
 	opts := []client.Option{
 		client.WithGetenv(func(key string) string { return env[key] }),
-		client.WithObjectStore(d.h.Store),
+		client.WithObjectStores(d.h.openEndpoint),
 		client.WithClock(d.h.Clock),
 		client.WithLogger(log.GetLoggerTo("mimir-client", &d.logs)),
 		client.WithEventHandler(d.record),
@@ -224,6 +231,10 @@ func (d *RunningDeployable) record(e client.Event) {
 	case client.EventValueChanged, client.EventValueRejected:
 		d.mu.Lock()
 		d.valueEvents = append(d.valueEvents, e)
+		d.mu.Unlock()
+	case client.EventLocationSwitch:
+		d.mu.Lock()
+		d.locationSwitches = append(d.locationSwitches, e.Err)
 		d.mu.Unlock()
 	}
 }
@@ -259,6 +270,14 @@ func (d *RunningDeployable) Logs() string {
 func (h *Harness) NextPoll(t *testing.T) {
 	t.Helper()
 
+	h.NextPollAfter(t, client.DefaultPollInterval)
+}
+
+// NextPollAfter is NextPoll for clients whose poll interval is interval
+// rather than the Default. Every Deployable's client must poll by then.
+func (h *Harness) NextPollAfter(t *testing.T, interval time.Duration) {
+	t.Helper()
+
 	h.mu.Lock()
 	deployables := h.deployables
 	waiters := len(deployables) + len(h.replicas)
@@ -273,7 +292,7 @@ func (h *Harness) NextPoll(t *testing.T) {
 	if err := h.Clock.WaitForWaiters(ctx, waiters); err != nil {
 		t.Fatalf("clients never waited for their next poll: %v", err)
 	}
-	h.Clock.Advance(client.DefaultPollInterval)
+	h.Clock.Advance(interval)
 
 	for _, d := range deployables {
 		err := await(t, d.polled, "poll")
@@ -477,14 +496,7 @@ func (h *Harness) Snapshot(t *testing.T, ns models.Namespace) (models.Snapshot, 
 func (h *Harness) PutSnapshot(t *testing.T, ns models.Namespace, snap models.Snapshot) {
 	t.Helper()
 
-	body, err := json.Marshal(snap)
-	if err != nil {
-		t.Fatal(err)
-	}
-	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
-	if err = h.Store.Put(t.Context(), loc.Bucket, loc.Key, body); err != nil {
-		t.Fatalf("write Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
-	}
+	h.PutSnapshotAt(t, h.Store, models.DefaultBucketPrefix, ns, snap)
 }
 
 func await(t *testing.T, ch <-chan error, what string) error {

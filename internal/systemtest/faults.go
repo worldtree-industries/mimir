@@ -11,6 +11,10 @@ import (
 // errInjected is what a faulty store returns while a fault is switched on.
 var errInjected = errors.New("systemtest: injected object storage failure")
 
+// errUnreachable is what clients get for object storage at an endpoint the
+// harness doesn't have.
+var errUnreachable = errors.New("systemtest: no object storage at this endpoint")
+
 // faultyStore wraps a store, which mimir-server publishes through, so a test
 // can make uploads or the whole of object storage fail. Clients and the
 // test's own reads go to the wrapped store directly.

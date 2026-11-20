@@ -77,9 +77,22 @@ Getters start at the Items' Defaults. The Mimir client inside the generated Conf
 A generated Config's constructor starts the Mimir client, which:
 
 1. determines its Namespace: the Config's derived name, the Deployable (`MIMIR_DEPLOYABLE`, or else the last element of the binary's main package path, so `cmd/checkout` is `checkout`), and the Environment (`MIMIR_ENVIRONMENT`). Without an Environment it logs an error and runs on Defaults only.
-2. reads its Snapshot from object storage at a location it builds itself: bucket `mimir-<environment>`, object `<config>/<deployable>.json`. A missing Snapshot means every Item uses its Default.
-3. registers the Config's Items with `mimir-server` (`MIMIR_SERVER_URL`, default `http://mimir-server:8080`) in the background. A failed Registration is logged and never affects the values.
-4. polls the Snapshot every 30 seconds until the constructor's context is done, with conditional GETs, so an unchanged Snapshot costs almost nothing and changes no values.
+2. reads its Snapshot from object storage at a location it builds itself: bucket `<prefix>-<environment>` (prefix `mimir` by default), object `<config>/<deployable>.json`. A missing Snapshot means every Item uses its Default.
+3. registers the Config's Items with `mimir-server` in the background. A failed Registration is logged and never affects the values.
+4. polls the Snapshot every poll interval (30 seconds by default) until the constructor's context is done, with conditional GETs, so an unchanged Snapshot costs almost nothing and changes no values.
+
+### The client's own settings: `MimirClient`
+
+The client's settings are a Config of their own, `MimirClient` (named `github.com/worldtree-industries/mimir/client.MimirClient`), which every client registers and polls alongside its Config, in the same Deployable and Environment. Tune them with Overrides like any other Config. Each starts from an environment variable if it's set, else its Default:
+
+| Item (all `string`) | Environment variable | Default |
+| --- | --- | --- |
+| `poll_interval` (a Go duration, at least `1s`) | `MIMIR_POLL_INTERVAL` | `30s` |
+| `server_url` | `MIMIR_SERVER_URL` | `http://mimir-server:8080` |
+| `object_store_endpoint` (empty: the standard `AWS_ENDPOINT_URL_S3` / `AWS_ENDPOINT_URL`) | `MIMIR_OBJECT_STORE_ENDPOINT` | empty |
+| `bucket_prefix` | `MIMIR_BUCKET_PREFIX` | `mimir` |
+
+A new poll interval applies from the next wait, and a new server URL from the next Registration. A new endpoint or bucket prefix is adopted only once the client has read both its Snapshots (`MimirClient`'s and its Config's) there; until then it logs the failure, keeps polling the old location and tries again at each poll, so a bad Override can't strand it where it can't read the fix. A restarted client begins again from its environment variables or Defaults, and adopts an Override only once it reads it from there. A setting the client can't use (an environment variable or an Override) is logged and the last good one kept. `MIMIR_ENVIRONMENT`, `MIMIR_DEPLOYABLE` and object storage credentials always come from the environment, never from Mimir.
 
 Values are never read from `mimir-server`, so a program that starts while it is down still gets its real values. Nothing object storage or a bad value does can break a running program:
 
@@ -87,7 +100,7 @@ Values are never read from `mimir-server`, so a program that starts while it is 
 - A value that doesn't parse as its Item's type is logged and reported, and the Item keeps its last good value. The rest of the Snapshot still applies.
 - Getters are safe to call from any goroutine while values update.
 
-To react to changes and errors, pass `client.WithEventHandler` to the constructor. It's told about each Item whose value changes (`EventValueChanged`), each rejected value (`EventValueRejected`), and each poll and Registration, with `Err` set when one failed.
+To react to changes and errors, pass `client.WithEventHandler` to the constructor. It's told about each Item whose value changes (`EventValueChanged`), each rejected value (`EventValueRejected`), each attempt to switch Snapshot location (`EventLocationSwitch`), and each poll and Registration, with `Err` set when one failed. Changes to `MimirClient`'s own Items are logged rather than reported.
 
 ## mimir-server
 

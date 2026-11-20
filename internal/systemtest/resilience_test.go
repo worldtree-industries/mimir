@@ -209,7 +209,7 @@ func TestValueThatDoesNotParseKeepsLastGoodValue(t *testing.T) {
 			rejected = append(rejected, e)
 		case client.EventValueChanged:
 			changed = append(changed, e)
-		case client.EventRegistered, client.EventPolled:
+		case client.EventRegistered, client.EventPolled, client.EventLocationSwitch:
 		}
 	}
 	if len(rejected) != 1 || rejected[0].Item != barKey || rejected[0].Value != "forty-two" || rejected[0].Err == nil {

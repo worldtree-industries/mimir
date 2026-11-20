@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,20 +19,26 @@ const registrationTimeout = 10 * time.Second
 // registrationPath is mimir-server's Registration endpoint.
 const registrationPath = "/v1/registrations"
 
-// register tells mimir-server about the Namespace and the Config's Items. A
-// failure is logged and reported; it never affects the values the program
-// reads.
+// register tells mimir-server about the Namespace and the Config's Items,
+// and then about MimirClient's, at the server URL the settings name now. A
+// failure is logged and reported, in one EventRegistered for both; it never
+// affects the values the program reads.
 func (c *Client) register(ctx context.Context) {
-	err := c.sendRegistration(ctx)
-	if err != nil {
-		c.logger.ErrorContext(ctx, "Registration failed; values are unaffected", "error", err)
+	var errs []error
+	for _, p := range []*configPoll{c.user, c.self} {
+		err := c.sendRegistration(ctx, p)
+		if err != nil {
+			err = fmt.Errorf("register %s: %w", p.def.Config, err)
+			c.logger.ErrorContext(ctx, "Registration failed; values are unaffected", "error", err)
+		}
+		errs = append(errs, err)
 	}
-	c.emit(Event{Kind: EventRegistered, Err: err})
+	c.emit(Event{Kind: EventRegistered, Err: errors.Join(errs...)})
 }
 
-func (c *Client) sendRegistration(ctx context.Context) error {
-	reg := models.Registration{Namespace: c.ns, DisplayName: c.def.DisplayName}
-	for _, item := range c.def.Items {
+func (c *Client) sendRegistration(ctx context.Context, p *configPoll) error {
+	reg := models.Registration{Namespace: p.ns, DisplayName: p.def.DisplayName}
+	for _, item := range p.def.Items {
 		reg.Items = append(reg.Items, models.Item{
 			Name:        item.Name,
 			Description: item.Description,
@@ -44,7 +51,8 @@ func (c *Client) sendRegistration(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("encode Registration: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.serverURL+registrationPath, bytes.NewReader(body))
+	url := c.settings.currentServerURL() + registrationPath
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build Registration request: %w", err)
 	}

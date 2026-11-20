@@ -28,9 +28,10 @@ import (
 //	GET /v1/explain         ?config=&deployable=&environment= the Namespace's
 //	                        Items, each with its effective value and Source
 //	                        (200, models.Explanation)
-//	GET  /v1/history        the history of Override changes, oldest first (200);
-//	                        filter with the config, deployable and environment
-//	                        query parameters
+//	GET  /v1/history        the History of Override changes, oldest first (200);
+//	                        filter with ?config=, ?deployable= and
+//	                        ?environment=, which match as for GET /v1/overrides
+//	                        except that config is optional
 //	GET  /v1/configs        the Configs Mimir knows (200)
 //	GET  /v1/items          the Items Mimir knows, with when they were last
 //	                        registered (200); narrow with the config query
@@ -129,9 +130,12 @@ func (h handlers) createOverride(w http.ResponseWriter, r *http.Request) error {
 	return h.codec.Respond(w, r, http.StatusCreated, created)
 }
 
-func (h handlers) listOverrides(w http.ResponseWriter, r *http.Request) error {
+// scopeFilter reads the config, deployable and environment query parameters
+// as a ScopeFilter: an absent deployable or environment matches any, and a
+// present one matches exactly, empty meaning not narrowed.
+func scopeFilter(r *http.Request) models.ScopeFilter {
 	q := r.URL.Query()
-	filter := service.ScopeFilter{Config: q.Get("config")}
+	filter := models.ScopeFilter{Config: q.Get("config")}
 	if q.Has("deployable") {
 		deployable := q.Get("deployable")
 		filter.Deployable = &deployable
@@ -141,7 +145,11 @@ func (h handlers) listOverrides(w http.ResponseWriter, r *http.Request) error {
 		filter.Environment = &environment
 	}
 
-	overrides, err := h.svc.ListOverrides(r.Context(), filter)
+	return filter
+}
+
+func (h handlers) listOverrides(w http.ResponseWriter, r *http.Request) error {
+	overrides, err := h.svc.ListOverrides(r.Context(), scopeFilter(r))
 	if err != nil {
 		return problem(err)
 	}
@@ -224,12 +232,7 @@ func problem(err error) error {
 }
 
 func (h handlers) history(w http.ResponseWriter, r *http.Request) error {
-	q := r.URL.Query()
-	entries, err := h.svc.History(r.Context(), models.Scope{
-		Config:      q.Get("config"),
-		Deployable:  q.Get("deployable"),
-		Environment: q.Get("environment"),
-	})
+	entries, err := h.svc.History(r.Context(), scopeFilter(r))
 	if err != nil {
 		return problem(err)
 	}

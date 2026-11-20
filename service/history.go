@@ -45,8 +45,8 @@ func (s *Service) recordHistory(
 	return err
 }
 
-// History returns the history entries matching filter, oldest first. An empty
-// field of filter matches every value.
-func (s *Service) History(ctx context.Context, filter models.Scope) ([]models.HistoryEntry, error) {
+// History returns the History entries whose Scope filter matches, oldest
+// first.
+func (s *Service) History(ctx context.Context, filter models.ScopeFilter) ([]models.HistoryEntry, error) {
 	return s.store.History(ctx, filter)
 }

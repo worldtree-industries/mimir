@@ -119,6 +119,7 @@ Registration only adds: a version that drops an Item leaves it and its Overrides
   Narrow the Scope with `"deployable"`, `"environment"` or both. When several Overrides apply to an Item in a Namespace, the most specific Scope wins: Deployable and Environment, then Deployable, then Environment, then Config-wide (ADR 0003).
 - `PUT /v1/overrides/{id}`: set an Override's value (`{"value": "600"}`). `DELETE /v1/overrides/{id}` removes it; the next most specific Override, or the Default, takes effect.
 - `GET /v1/overrides?config=...`: list a Config's Overrides. Add `deployable=` and/or `environment=` to match that Scope field exactly (empty means not narrowed); an absent parameter matches anything.
+- `GET /v1/history`: the History of every change to an Override, oldest first. Filter it with `config=`, `deployable=` and `environment=`, which match as for listing Overrides (`config` is optional here).
 - `GET /v1/explain?config=...&deployable=...&environment=...`: for a Namespace, every Item's effective value and its source: the winning Override, or the Default.
 
 ## Object storage

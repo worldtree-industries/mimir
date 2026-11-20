@@ -26,14 +26,16 @@ func (s *Store) AppendHistory(ctx context.Context, e models.HistoryEntry) (model
 	return e, nil
 }
 
-// History returns the entries matching filter, oldest first. An empty field
-// of filter matches every value.
-func (s *Store) History(ctx context.Context, filter models.Scope) ([]models.HistoryEntry, error) {
+// History returns the entries whose Scope filter matches (see
+// [models.ScopeFilter.Matches]), oldest first.
+func (s *Store) History(ctx context.Context, filter models.ScopeFilter) ([]models.HistoryEntry, error) {
 	rows, err := s.q(ctx).Query(ctx, `
 		SELECT id, at, action, config, deployable, environment, item_name, item_type,
 			old_value, new_value, caller
 		FROM history
-		WHERE ($1 = '' OR config = $1) AND ($2 = '' OR deployable = $2) AND ($3 = '' OR environment = $3)
+		WHERE ($1 = '' OR config = $1)
+			AND ($2::text IS NULL OR deployable = $2)
+			AND ($3::text IS NULL OR environment = $3)
 		ORDER BY id`,
 		filter.Config, filter.Deployable, filter.Environment)
 	if err != nil {

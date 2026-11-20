@@ -50,6 +50,7 @@ func Routes(r chi.Router, svc *service.Service, logger *slog.Logger) {
 	r.Put("/v1/overrides/{id}", handle(h.updateOverride))
 	r.Delete("/v1/overrides/{id}", handle(h.deleteOverride))
 	r.Get("/v1/history", handle(h.history))
+	r.Get("/v1/environments", handle(h.environments))
 }
 
 type handlers struct {
@@ -68,6 +69,15 @@ func (h handlers) register(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(http.StatusNoContent)
 
 	return nil
+}
+
+func (h handlers) environments(w http.ResponseWriter, r *http.Request) error {
+	names, err := h.svc.Environments(r.Context())
+	if err != nil {
+		return err
+	}
+
+	return h.codec.Respond(w, r, http.StatusOK, map[string][]string{"environments": names})
 }
 
 func (h handlers) createOverride(w http.ResponseWriter, r *http.Request) error {

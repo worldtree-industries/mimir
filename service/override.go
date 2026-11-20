@@ -23,6 +23,12 @@ func (s *Service) CreateOverride(ctx context.Context, o models.Override) (models
 		return models.Override{}, err
 	}
 
+	if o.Scope.Environment != "" {
+		if err := s.checkEnvironment(ctx, o.Scope.Environment); err != nil {
+			return models.Override{}, err
+		}
+	}
+
 	var created models.Override
 	err := s.store.InTx(ctx, func(ctx context.Context) error {
 		var createErr error

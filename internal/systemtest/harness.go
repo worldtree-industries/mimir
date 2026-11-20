@@ -544,3 +544,38 @@ func (b *lockedBuffer) String() string {
 
 	return b.buf.String()
 }
+
+// Request sends a request with the given method to the admin API path and
+// returns the response's status and body. A nil payload sends no body;
+// otherwise it is sent as JSON.
+func (h *Harness) Request(t *testing.T, method, path string, payload any) (int, []byte) {
+	t.Helper()
+
+	return h.Send(t, method, path, payload)
+}
+
+// Send is Request with header pairs (name, value, ...) sent as well.
+func (h *Harness) Send(t *testing.T, method, path string, payload any, header ...string) (int, []byte) {
+	t.Helper()
+
+	var reqBody io.Reader
+	if payload != nil {
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reqBody = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequestWithContext(t.Context(), method, h.URL+path, reqBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for i := 0; i+1 < len(header); i += 2 {
+		req.Header.Set(header[i], header[i+1])
+	}
+
+	return h.send(t, req)
+}

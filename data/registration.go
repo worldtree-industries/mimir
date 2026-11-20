@@ -81,6 +81,45 @@ func (s *Store) Namespaces(ctx context.Context, config string) ([]models.Namespa
 	return namespaces, nil
 }
 
+// Items returns every Item registered for config, with its Default as Value.
+func (s *Store) Items(ctx context.Context, config string) ([]models.Item, error) {
+	rows, err := s.q(ctx).Query(ctx, `
+		SELECT name, description, type, default_value FROM items
+		WHERE config = $1 ORDER BY name, type`, config)
+	if err != nil {
+		return nil, fmt.Errorf("list Items of %s: %w", config, err)
+	}
+	defer rows.Close()
+
+	var items []models.Item
+	for rows.Next() {
+		var item models.Item
+		if err = rows.Scan(&item.Name, &item.Description, &item.Type, &item.Value); err != nil {
+			return nil, fmt.Errorf("read Item of %s: %w", config, err)
+		}
+		items = append(items, item)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("list Items of %s: %w", config, err)
+	}
+
+	return items, nil
+}
+
+// HasNamespace reports whether ns is a known Namespace.
+func (s *Store) HasNamespace(ctx context.Context, ns models.Namespace) (bool, error) {
+	var exists bool
+	err := s.q(ctx).QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM namespaces WHERE config = $1 AND deployable = $2 AND environment = $3)`,
+		ns.Config, ns.Deployable, ns.Environment,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("look up Namespace: %w", err)
+	}
+
+	return exists, nil
+}
+
 // AllNamespaces returns every known Namespace.
 func (s *Store) AllNamespaces(ctx context.Context) ([]models.Namespace, error) {
 	rows, err := s.q(ctx).Query(ctx, `

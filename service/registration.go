@@ -15,6 +15,10 @@ func (s *Service) Register(ctx context.Context, reg models.Registration) error {
 		return err
 	}
 
+	if err := s.checkEnvironment(ctx, reg.Namespace.Environment); err != nil {
+		return err
+	}
+
 	var isNew bool
 	err := s.store.InTx(ctx, func(ctx context.Context) error {
 		var recordErr error

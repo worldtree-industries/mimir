@@ -4,7 +4,6 @@ import (
 	"errors"
 	"path"
 	"runtime/debug"
-	"strings"
 
 	"github.com/worldtree-industries/mimir/models"
 )
@@ -37,14 +36,10 @@ func discoverNamespace(config string, getenv func(string) string, buildPath stri
 	return ns, nil
 }
 
-// deployableFromBuildPath derives a Deployable name from a main package path:
-// "<name>" in ".../cmd/<name>", or else the path's last element.
+// deployableFromBuildPath derives a Deployable name from a main package
+// path: its last element, which is <name> for an Ivaldi binary in cmd/<name>.
+// A binary built from files ("go run main.go") has no usable path.
 func deployableFromBuildPath(buildPath string) string {
-	const cmdDir = "/cmd/"
-	if _, after, found := strings.CutLast(buildPath, cmdDir); found {
-		name, _, _ := strings.Cut(after, "/")
-		return name
-	}
 	if buildPath == "" || buildPath == "command-line-arguments" {
 		return ""
 	}

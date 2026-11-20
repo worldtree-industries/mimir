@@ -32,6 +32,6 @@ go.work.sum
 # .vscode/
 
 # Generated binaries
-mimir-generate
+/mimir-generate
 /bin/
 /logs/

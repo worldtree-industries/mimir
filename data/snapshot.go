@@ -23,6 +23,16 @@ func NewSnapshots(store objectstore.Store, prefix string) *Snapshots {
 	return &Snapshots{store: store, prefix: prefix}
 }
 
+// Delete removes ns's Snapshot. Deleting one that isn't there is fine.
+func (s *Snapshots) Delete(ctx context.Context, ns models.Namespace) error {
+	loc := models.SnapshotLocationFor(s.prefix, ns)
+	if err := s.store.Delete(ctx, loc.Bucket, loc.Key); err != nil {
+		return fmt.Errorf("delete Snapshot %s/%s: %w", loc.Bucket, loc.Key, err)
+	}
+
+	return nil
+}
+
 // Publish writes snap as ns's Snapshot, replacing the one there.
 func (s *Snapshots) Publish(ctx context.Context, ns models.Namespace, snap models.Snapshot) error {
 	loc := models.SnapshotLocationFor(s.prefix, ns)

@@ -84,7 +84,8 @@ type Client struct {
 
 // Start applies the Definition's Defaults, determines the Namespace, reads the
 // Namespace's Snapshot once, and then, in the background until ctx is done,
-// registers the Config with mimir-server and polls the Snapshot every
+// registers the Config with mimir-server (again every
+// DefaultRegistrationInterval) and polls the Snapshot every
 // DefaultPollInterval. Nothing it does in the background can stop the program
 // reading values: on any failure the Config keeps its current values.
 func Start(ctx context.Context, def Definition, opts ...Option) *Client {
@@ -130,7 +131,7 @@ func Start(ctx context.Context, def Definition, opts ...Option) *Client {
 	c.poll(startupCtx)
 	cancel()
 
-	go c.register(ctx)
+	go c.registerEvery(ctx)
 	go c.pollEvery(ctx, DefaultPollInterval)
 
 	return c

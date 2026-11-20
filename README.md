@@ -78,7 +78,7 @@ A generated Config's constructor starts the Mimir client, which:
 
 1. determines its Namespace: the Config's derived name, the Deployable (`MIMIR_DEPLOYABLE`, or else the last element of the binary's main package path, so `cmd/checkout` is `checkout`), and the Environment (`MIMIR_ENVIRONMENT`). Without an Environment it logs an error and runs on Defaults only.
 2. reads its Snapshot from object storage at a location it builds itself: bucket `mimir-<environment>`, object `<config>/<deployable>.json`. A missing Snapshot means every Item uses its Default.
-3. registers the Config's Items with `mimir-server` (`MIMIR_SERVER_URL`, default `http://mimir-server:8080`) in the background. A failed Registration is logged and never affects the values.
+3. registers the Config's Items with `mimir-server` (`MIMIR_SERVER_URL`, default `http://mimir-server:8080`) in the background, and again every 24 hours so what it still declares never expires. A failed Registration is logged, retried after 5 minutes, and never affects the values.
 4. polls the Snapshot every 30 seconds until the constructor's context is done.
 
 Values are never read from `mimir-server`, so a program that starts while it is down still gets its real values.
@@ -93,6 +93,9 @@ Values are never read from `mimir-server`, so a program that starts while it is 
   {"scope": {"config": "github.com/acme/kafka.KafkaConfig"}, "item": {"name": "batch_size", "type": "int"}, "value": "500"}
   ```
   The Item must be registered. Errors are RFC 9457 problem documents.
+- `GET /v1/configs`, `GET /v1/items`, `GET /v1/namespaces`: what Registration taught the server, with when each Item and Namespace was first and last registered. `items` and `namespaces` take an optional `config` query parameter.
+
+Registration only adds: a version that drops an Item leaves it and its Overrides in place. Once an hour the server expires what no Deployable has registered for 60 days. An Item goes with its Overrides (each recorded in the history as deleted by `mimir-server:expiry`) and the Snapshots that held them are republished; a Namespace goes with its Snapshot in object storage.
 
 ## Object storage
 

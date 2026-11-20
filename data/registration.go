@@ -122,3 +122,16 @@ func (s *Store) AnyNamespace(ctx context.Context) (models.Namespace, bool, error
 
 	return ns, true, nil
 }
+
+// NamespaceKnown reports whether ns is registered.
+func (s *Store) NamespaceKnown(ctx context.Context, ns models.Namespace) (bool, error) {
+	var known bool
+	if err := s.q(ctx).QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM namespaces WHERE config = $1 AND deployable = $2 AND environment = $3)`,
+		ns.Config, ns.Deployable, ns.Environment,
+	).Scan(&known); err != nil {
+		return false, fmt.Errorf("look up Namespace: %w", err)
+	}
+
+	return known, nil
+}

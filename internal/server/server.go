@@ -37,16 +37,26 @@ type Config struct {
 	// OnReconcile, if set, is called after each reconcile. Tests use it to
 	// know one finished.
 	OnReconcile func()
+	// ExpiryInterval is how often the server looks for Items and Namespaces
+	// that went unregistered for 60 days. Zero means DefaultExpiryInterval.
+	ExpiryInterval time.Duration
+	// OnExpire, if set, is called after each such look. Tests use it to know
+	// one finished.
+	OnExpire func()
 }
 
 // DefaultReconcileInterval is how often Snapshots are republished by default.
 const DefaultReconcileInterval = service.DefaultReconcileInterval
 
+// DefaultExpiryInterval is how often expiry runs by default.
+const DefaultExpiryInterval = service.DefaultExpiryInterval
+
 // ReadinessCacheTTL is how long /readyz repeats its last answer.
 const ReadinessCacheTTL = service.ReadyCacheTTL
 
 // New migrates the database and returns mimir-server's router, ready to
-// serve. It also starts the periodic reconcile, which runs until ctx is done.
+// serve. It also starts the periodic reconcile and expiry, which run until ctx
+// is done.
 func New(ctx context.Context, cfg Config) (*router.Router, error) {
 	store := data.NewStore(cfg.Pool)
 	if err := store.Migrate(ctx); err != nil {
@@ -77,6 +87,12 @@ func New(ctx context.Context, cfg Config) (*router.Router, error) {
 		interval = DefaultReconcileInterval
 	}
 	go svc.RunReconcile(ctx, interval, cfg.OnReconcile)
+
+	expiryInterval := cfg.ExpiryInterval
+	if expiryInterval <= 0 {
+		expiryInterval = DefaultExpiryInterval
+	}
+	go svc.RunExpiry(ctx, expiryInterval, cfg.OnExpire)
 
 	return r, nil
 }

@@ -327,6 +327,13 @@ func (b *lockedBuffer) String() string {
 func (h *Harness) Request(t *testing.T, method, path string, payload any) (int, []byte) {
 	t.Helper()
 
+	return h.Send(t, method, path, payload)
+}
+
+// Send is Request with header pairs (name, value, ...) sent as well.
+func (h *Harness) Send(t *testing.T, method, path string, payload any, header ...string) (int, []byte) {
+	t.Helper()
+
 	var reqBody io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
@@ -342,17 +349,9 @@ func (h *Harness) Request(t *testing.T, method, path string, payload any) (int, 
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("%s %s: %v", method, path, err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("read response to %s %s: %v", method, path, err)
+	for i := 0; i+1 < len(header); i += 2 {
+		req.Header.Set(header[i], header[i+1])
 	}
 
-	return resp.StatusCode, body
+	return h.send(t, req)
 }

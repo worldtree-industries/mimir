@@ -70,6 +70,24 @@ func (s *Store) Overrides(ctx context.Context, config string) ([]models.Override
 	return overrides, nil
 }
 
+// Override returns Override id, locking it for the rest of the transaction.
+func (s *Store) Override(ctx context.Context, id int64) (models.Override, error) {
+	var o models.Override
+	err := s.q(ctx).QueryRow(ctx, `
+		SELECT o.id, i.config, coalesce(o.deployable, ''), coalesce(o.environment, ''), i.name, i.type, o.value
+		FROM overrides o JOIN items i ON i.id = o.item_id
+		WHERE o.id = $1 FOR UPDATE OF o`, id,
+	).Scan(&o.ID, &o.Scope.Config, &o.Scope.Deployable, &o.Scope.Environment, &o.Item.Name, &o.Item.Type, &o.Value)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return models.Override{}, ErrOverrideNotFound
+	case err != nil:
+		return models.Override{}, fmt.Errorf("read Override %d: %w", id, err)
+	}
+
+	return o, nil
+}
+
 // UpdateOverride sets the value of Override id, as of time at, and returns it.
 func (s *Store) UpdateOverride(ctx context.Context, id int64, value string, at time.Time) (models.Override, error) {
 	var o models.Override

@@ -113,6 +113,14 @@ func Start(ctx context.Context, def Definition, opts ...Option) *Client {
 	c.location = models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
 	c.logger = c.logger.With("deployable", ns.Deployable, "environment", ns.Environment)
 
+	if c.store == nil && objectstore.S3Configured(o.getenv) {
+		s3, s3Err := objectstore.NewS3FromEnv(ctx, o.getenv)
+		if s3Err != nil {
+			c.logger.ErrorContext(ctx, "Can't configure object storage", "error", s3Err)
+		} else {
+			c.store = s3
+		}
+	}
 	if c.store == nil {
 		c.logger.ErrorContext(ctx, "No object storage configured; running on Defaults only")
 		return c

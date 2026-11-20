@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 
@@ -26,6 +28,12 @@ import (
 //	GET /v1/explain         ?config=&deployable=&environment= the Namespace's
 //	                        Items, each with its effective value and Source
 //	                        (200, models.Explanation)
+//	GET  /v1/history        the history of Override changes, oldest first (200);
+//	                        filter with the config, deployable and environment
+//	                        query parameters
+//
+// Writes are attributed to the X-Mimir-Caller header, else to the address the
+// request came from.
 //
 // Errors are RFC 9457 problems. There is no authentication: the admin API is
 // for the private network only.
@@ -41,6 +49,7 @@ func Routes(r chi.Router, svc *service.Service, logger *slog.Logger) {
 	r.Get("/v1/explain", handle(h.explain))
 	r.Put("/v1/overrides/{id}", handle(h.updateOverride))
 	r.Delete("/v1/overrides/{id}", handle(h.deleteOverride))
+	r.Get("/v1/history", handle(h.history))
 }
 
 type handlers struct {
@@ -66,7 +75,7 @@ func (h handlers) createOverride(w http.ResponseWriter, r *http.Request) error {
 	if err := h.codec.Decode(w, r, &o); err != nil {
 		return err
 	}
-	created, err := h.svc.CreateOverride(r.Context(), o)
+	created, err := h.svc.CreateOverride(callerContext(r), o)
 	if err != nil {
 		return problem(err)
 	}
@@ -119,7 +128,7 @@ func (h handlers) updateOverride(w http.ResponseWriter, r *http.Request) error {
 	if err = h.codec.Decode(w, r, &body); err != nil {
 		return err
 	}
-	updated, err := h.svc.UpdateOverride(r.Context(), id, body.Value)
+	updated, err := h.svc.UpdateOverride(callerContext(r), id, body.Value)
 	if err != nil {
 		return problem(err)
 	}
@@ -132,7 +141,7 @@ func (h handlers) deleteOverride(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err = h.svc.DeleteOverride(r.Context(), id); err != nil {
+	if err = h.svc.DeleteOverride(callerContext(r), id); err != nil {
 		return problem(err)
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -166,4 +175,36 @@ func problem(err error) error {
 	default:
 		return httpx.Internal(err)
 	}
+}
+
+func (h handlers) history(w http.ResponseWriter, r *http.Request) error {
+	q := r.URL.Query()
+	entries, err := h.svc.History(r.Context(), models.Scope{
+		Config:      q.Get("config"),
+		Deployable:  q.Get("deployable"),
+		Environment: q.Get("environment"),
+	})
+	if err != nil {
+		return problem(err)
+	}
+
+	return h.codec.Respond(w, r, http.StatusOK, entries)
+}
+
+// callerHeader is the header with which a caller says who they are.
+const callerHeader = "X-Mimir-Caller"
+
+// callerContext is r's context, carrying who made the request as best known:
+// the name in the caller header, else the address it came from. The admin API
+// has no authentication, so neither is verified.
+func callerContext(r *http.Request) context.Context {
+	caller := r.Header.Get(callerHeader)
+	if caller == "" {
+		caller = r.RemoteAddr
+		if host, _, err := net.SplitHostPort(caller); err == nil {
+			caller = host
+		}
+	}
+
+	return service.WithCaller(r.Context(), caller)
 }

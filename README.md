@@ -90,7 +90,7 @@ The client's own poll interval, server URL, object storage endpoint and bucket p
 | Item (all `string`) | Environment variable | Default |
 | --- | --- | --- |
 | `poll_interval` (a Go duration, at least `1s`) | `MIMIR_POLL_INTERVAL` | `30s` |
-| `server_url` | `MIMIR_SERVER_URL` | `http://mimir-server:8080` |
+| `server_url` | `MIMIR_SERVER_URL` | `http://mimir-server.mimir-config.svc.cluster.local` |
 | `object_store_endpoint` (empty: the standard `AWS_ENDPOINT_URL_S3` / `AWS_ENDPOINT_URL`) | `MIMIR_OBJECT_STORE_ENDPOINT` | empty |
 | `bucket_prefix` | `MIMIR_BUCKET_PREFIX` | `mimir` |
 

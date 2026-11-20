@@ -13,8 +13,10 @@ import (
 
 // RecordRegistration records reg at time at: its Config, every Item it
 // declares, and its Namespace, each marked as registered at that time.
-// Registration only adds; nothing reg leaves out is removed. It reports
-// whether the Namespace is new.
+// Registration only adds; nothing reg leaves out is removed. An Item keeps
+// one description and Default, the ones registered last, so under mixed
+// versions they follow whichever registered most recently. It reports whether
+// the Namespace is new.
 func (s *Store) RecordRegistration(ctx context.Context, reg models.Registration, at time.Time) (bool, error) {
 	q := s.q(ctx)
 	ns := reg.Namespace

@@ -122,6 +122,8 @@ Registration only adds: a version that drops an Item leaves it and its Overrides
 - `GET /v1/history`: the History of every change to an Override, oldest first. Filter it with `config=`, `deployable=` and `environment=`, which match as for listing Overrides (`config` is optional here).
 - `GET /v1/explain?config=...&deployable=...&environment=...`: for a Namespace, every Item's effective value and its source: the winning Override, or the Default.
 
+Mimir keeps one Default per Item: the Default shown (by `explain` and `GET /v1/items`) is the most recently registered one. During a rollout where two versions declare different Defaults for the same Item, it follows whichever version registered last. Each client still uses its own built-in Default when no Override applies.
+
 ## Object storage
 
 Snapshots live in S3-API object storage, such as Rook/Ceph RGW. `mimir-server` and every client read the standard AWS environment variables (Mimir never holds credentials, ADR 0005):

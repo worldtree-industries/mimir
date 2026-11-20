@@ -1,6 +1,9 @@
 package systemtest_test
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/url"
 	"slices"
 	"testing"
 
@@ -94,5 +97,40 @@ func TestAnItemWhoseTypeChangedRegistersAsANewItem(t *testing.T) {
 	snap, _ := h.Snapshot(t, shopDevNamespace())
 	if len(snap.Values) != 2 {
 		t.Errorf("Snapshot = %+v, want one value for each of the two Items", snap.Values)
+	}
+}
+
+func TestDefaultShownIsTheMostRecentlyRegisteredOne(t *testing.T) {
+	h := systemtest.New(t)
+	oldVersion := shopRegistration(shopItem("timeout", models.TypeInt, "30"))
+	newVersion := shopRegistration(shopItem("timeout", models.TypeInt, "45"))
+
+	// During a rollout the versions register in turn; Mimir keeps one Default
+	// per Item, the one registered last.
+	for _, step := range []struct {
+		reg  models.Registration
+		want string
+	}{
+		{oldVersion, "30"},
+		{newVersion, "45"},
+		{oldVersion, "30"},
+	} {
+		h.Register(t, step.reg)
+
+		items := h.Items(t, shopConfig)
+		if len(items) != 1 || items[0].Default != step.want {
+			t.Fatalf("catalogue Items = %+v, want timeout with Default %q", items, step.want)
+		}
+		ns := shopDevNamespace()
+		status, body := h.Request(t, http.MethodGet, "/v1/explain?"+url.Values{
+			"config": {ns.Config}, "deployable": {ns.Deployable}, "environment": {ns.Environment},
+		}.Encode(), nil)
+		var explained models.Explanation
+		if err := json.Unmarshal(body, &explained); status != http.StatusOK || err != nil {
+			t.Fatalf("explain: status %d, body %s, decode error %v", status, body, err)
+		}
+		if len(explained.Items) != 1 || explained.Items[0].Default != step.want {
+			t.Fatalf("explained Items = %+v, want timeout with Default %q", explained.Items, step.want)
+		}
 	}
 }

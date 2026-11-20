@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -68,7 +69,12 @@ func processConfigFile(configPath string) error {
 		return fmt.Errorf("failed to determine package name: %w", err)
 	}
 
-	generated, err := generator.Generate(data, packageName)
+	importPath, err := importPathFor(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to determine import path: %w", err)
+	}
+
+	generated, err := generator.Generate(data, packageName, importPath)
 	if err != nil {
 		return err
 	}
@@ -122,4 +128,51 @@ func getPackageName(configPath string) (string, error) {
 	}
 
 	return filepath.Base(dir), nil
+}
+
+// importPathFor returns the Go import path of the package holding configPath:
+// the module path from the nearest go.mod above it plus the directory relative
+// to that go.mod.
+func importPathFor(configPath string) (string, error) {
+	absDir, err := filepath.Abs(filepath.Dir(configPath))
+	if err != nil {
+		return "", err
+	}
+
+	for dir := absDir; ; dir = filepath.Dir(dir) {
+		content, readErr := os.ReadFile(filepath.Join(dir, "go.mod"))
+		if readErr == nil {
+			modulePath, ok := parseModulePath(string(content))
+			if !ok {
+				return "", fmt.Errorf("no module directive in %s", filepath.Join(dir, "go.mod"))
+			}
+
+			rel, relErr := filepath.Rel(dir, absDir)
+			if relErr != nil {
+				return "", relErr
+			}
+
+			return path.Join(modulePath, filepath.ToSlash(rel)), nil
+		}
+
+		if !os.IsNotExist(readErr) {
+			return "", readErr
+		}
+
+		if filepath.Dir(dir) == dir {
+			return "", fmt.Errorf("no go.mod found above %s", absDir)
+		}
+	}
+}
+
+func parseModulePath(goMod string) (string, bool) {
+	for line := range strings.SplitSeq(goMod, "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "module"); ok {
+			if fields := strings.Fields(rest); len(fields) > 0 {
+				return strings.Trim(fields[0], "\"`"), true
+			}
+		}
+	}
+
+	return "", false
 }

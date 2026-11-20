@@ -23,7 +23,20 @@ func (s *Service) CreateOverride(ctx context.Context, o models.Override) (models
 		return models.Override{}, fmt.Errorf("%w: only Config-wide Scopes are supported", ErrInvalid)
 	}
 
-	created, err := s.store.CreateOverride(ctx, o, s.clock.Now())
+	if err := validateValue(o); err != nil {
+		return models.Override{}, err
+	}
+
+	var created models.Override
+	err := s.store.InTx(ctx, func(ctx context.Context) error {
+		var createErr error
+		created, createErr = s.store.CreateOverride(ctx, o, s.clock.Now())
+		if createErr != nil {
+			return createErr
+		}
+
+		return s.recordHistory(ctx, models.HistoryCreated, o.Scope, o.Item, nil, &o.Value)
+	})
 	switch {
 	case errors.Is(err, data.ErrUnknownItem):
 		return models.Override{}, ErrUnknownItem
@@ -36,4 +49,14 @@ func (s *Service) CreateOverride(ctx context.Context, o models.Override) (models
 	s.publishConfigLogged(ctx, o.Scope.Config)
 
 	return created, nil
+}
+
+// validateValue rejects an Override whose value doesn't parse as its Item's
+// type. Every write path of an Override runs it.
+func validateValue(o models.Override) error {
+	if err := models.ValidateValue(o.Item.Type, o.Value); err != nil {
+		return fmt.Errorf("%w: the value %w", ErrInvalid, err)
+	}
+
+	return nil
 }

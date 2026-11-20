@@ -4,7 +4,7 @@ A config system with live-update capability, written in Go
 ## Overview
 
 Mimir is a configuration management system that provides:
-- **Live Updates**: Configuration changes are pushed to clients in real-time via Server-Sent Events (SSE)
+- **Defaults in code**: Each Config and its Defaults are defined in a config file next to the code that reads it
 - **Type Safety**: Strongly-typed configuration values with automatic parsing
 - **Thread Safety**: All configuration access is protected by RWMutex
 - **Code Generation**: Automatic generation of type-safe config structs from JSON definitions
@@ -19,14 +19,7 @@ See [cmd/mimir-generate/README.md](cmd/mimir-generate/README.md) for detailed do
 
 #### Quick Start
 
-1. Create `.mimir.json` in your project root:
-```json
-{
-  "config_server_url": "http://localhost:8080"
-}
-```
-
-2. Create a config file (e.g., `myapp_config.json`):
+1. Create a config file (e.g., `myapp_config.json`; the generator picks up files ending in `_config.json`):
 ```json
 {
   "namespace": "MyAppConfig",
@@ -47,7 +40,7 @@ See [cmd/mimir-generate/README.md](cmd/mimir-generate/README.md) for detailed do
 }
 ```
 
-3. Build and run the generator:
+2. Build and run the generator:
 ```bash
 # Build the generator
 go build -o mimir-generate ./cmd/mimir-generate
@@ -59,7 +52,7 @@ go install ./cmd/mimir-generate
 ./mimir-generate
 ```
 
-4. Use the generated config in your code:
+3. Use the generated config in your code:
 ```go
 package main
 
@@ -75,7 +68,7 @@ func main() {
     port := cfg.GetPort()    // int64
     debug := cfg.GetDebug()  // bool
 
-    // Config automatically updates when server pushes changes
+    // For now every getter returns the Item's Default.
 }
 ```
 

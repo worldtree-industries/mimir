@@ -1,10 +1,9 @@
-package config
+package models
 
-type Key string
-
+// Type is the type of an Item's value.
 type Type string
 
-//go:generate enumgen -type ConfigType
+// The types an Item can have.
 const (
 	TypeString      Type = "string"
 	TypeInt         Type = "int"
@@ -20,6 +19,7 @@ const (
 	TypeFloatSet    Type = "float_set"
 )
 
+// Item is one value in a Config. Value holds its Default.
 type Item struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -27,13 +27,8 @@ type Item struct {
 	Value       string `json:"value"`
 }
 
+// Config is a named, typed set of Items.
 type Config struct {
 	Namespace string `json:"namespace"`
 	Items     []Item `json:"items"`
-}
-
-type Update struct {
-	Namespace string
-	FieldName string
-	Value     string
 }

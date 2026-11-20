@@ -85,7 +85,7 @@ Values are never read from `mimir-server`, so a program that starts while it is 
 
 ## mimir-server
 
-`mimir-server` stores Registrations and Overrides in Postgres (`DATABASE_URL`; it migrates the schema at startup) and publishes each Namespace's Snapshot to object storage: after the Namespace's first Registration, and after every Override of its Config. Its API, for the private network only (there is no authentication yet):
+`mimir-server` stores Registrations and Overrides in Postgres (`DATABASE_URL`; it migrates the schema at startup) and publishes each Namespace's Snapshot to object storage: after the Namespace's first Registration, and after every change to an Override whose Scope covers it. Its API, for the private network only (there is no authentication yet):
 
 - `POST /v1/registrations`: Registration, sent by clients.
 - `POST /v1/overrides`: create an Override, for example a Config-wide one:
@@ -93,6 +93,11 @@ Values are never read from `mimir-server`, so a program that starts while it is 
   {"scope": {"config": "github.com/acme/kafka.KafkaConfig"}, "item": {"name": "batch_size", "type": "int"}, "value": "500"}
   ```
   The Item must be registered. Errors are RFC 9457 problem documents.
+
+  Narrow the Scope with `"deployable"`, `"environment"` or both. When several Overrides apply to an Item in a Namespace, the most specific Scope wins: Deployable and Environment, then Deployable, then Environment, then Config-wide (ADR 0003).
+- `PUT /v1/overrides/{id}`: set an Override's value (`{"value": "600"}`). `DELETE /v1/overrides/{id}` removes it; the next most specific Override, or the Default, takes effect.
+- `GET /v1/overrides?config=...`: list a Config's Overrides. Add `deployable=` and/or `environment=` to match that Scope field exactly (empty means not narrowed); an absent parameter matches anything.
+- `GET /v1/explain?config=...&deployable=...&environment=...`: for a Namespace, every Item's effective value and its source: the winning Override, or the Default.
 
 ## Object storage
 

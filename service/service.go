@@ -18,6 +18,12 @@ var ErrUnknownItem = errors.New("the Item isn't registered for that Config")
 // ErrOverrideExists means the Item already has an Override for that Scope.
 var ErrOverrideExists = errors.New("the Item already has an Override for that Scope")
 
+// ErrOverrideNotFound means there is no Override with the given ID.
+var ErrOverrideNotFound = errors.New("no such Override")
+
+// ErrUnknownNamespace means the Namespace has never registered.
+var ErrUnknownNamespace = errors.New("no such Namespace")
+
 // Config is what a Service is built from.
 type Config struct {
 	Store     *data.Store

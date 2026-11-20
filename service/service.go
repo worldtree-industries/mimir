@@ -35,6 +35,7 @@ type Service struct {
 	snapshots *data.Snapshots
 	clock     clock.Clock
 	logger    *slog.Logger
+	ready     readyCache
 }
 
 // New returns a Service.

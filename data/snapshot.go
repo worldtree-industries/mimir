@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/worldtree-industries/mimir/internal/objectstore"
@@ -32,6 +33,19 @@ func (s *Snapshots) Publish(ctx context.Context, ns models.Namespace, snap model
 	}
 	if err = s.store.Put(ctx, loc.Bucket, loc.Key, body); err != nil {
 		return fmt.Errorf("publish Snapshot %s/%s: %w", loc.Bucket, loc.Key, err)
+	}
+
+	return nil
+}
+
+// Reachable reports whether object storage answers for ns's bucket. A missing
+// Snapshot still means it does; only a failure to get an answer is an error.
+func (s *Snapshots) Reachable(ctx context.Context, ns models.Namespace) error {
+	loc := models.SnapshotLocationFor(s.prefix, ns)
+
+	_, err := s.store.Get(ctx, loc.Bucket, loc.Key, "")
+	if err != nil && !errors.Is(err, objectstore.ErrNotFound) && !errors.Is(err, objectstore.ErrNotModified) {
+		return fmt.Errorf("reach object storage bucket %s: %w", loc.Bucket, err)
 	}
 
 	return nil

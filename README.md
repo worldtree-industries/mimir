@@ -78,7 +78,7 @@ A generated Config's constructor starts the Mimir client, which:
 
 1. determines its Namespace: the Config's derived name, the Deployable (`MIMIR_DEPLOYABLE`, or else the last element of the binary's main package path, so `cmd/checkout` is `checkout`), and the Environment (`MIMIR_ENVIRONMENT`). The Environment must be one of mjolnir's (`utils/environment`); if it is missing or unknown the client logs an error, skips Registration and polling, and leaves every Item on its Default. mimir-server creates those Environments at startup, lists them at `GET /v1/environments`, and rejects an Override scoped to any other. Without a usable Namespace it logs an error and runs on Defaults only.
 2. reads its Snapshot from object storage at a location it builds itself: bucket `<prefix>-<environment>` (prefix `mimir` by default), object `<config>/<deployable>.json`. A missing Snapshot means every Item uses its Default.
-3. registers the Config's Items with `mimir-server` in the background, and again every 24 hours so what it still declares never expires. A failed Registration is logged, retried after 5 minutes, and never affects the values.
+3. registers the Config's Items with `mimir-server` in the background, and again every 24 hours so what it still declares never expires. A failed Registration is logged, retried after 5 minutes, and never affects the values. Registration doesn't need object storage: a client with none configured, or none it can open, still registers.
 4. polls the Snapshot every poll interval (30 seconds by default) until the constructor's context is done, with conditional GETs, so an unchanged Snapshot costs almost nothing and changes no values.
 
 ### The client's own settings: `MimirClient`

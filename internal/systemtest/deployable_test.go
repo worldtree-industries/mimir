@@ -97,3 +97,29 @@ func TestRegistrationFailureLeavesDefaults(t *testing.T) {
 		t.Errorf("GetFoo() = %q, want the Default %q", got, "default")
 	}
 }
+
+func TestClientRegistersEvenWithoutObjectStorage(t *testing.T) {
+	cases := map[string]systemtest.Deployable{
+		"none configured": {Name: "foo-consumer", Environment: "dev", NoObjectStore: true},
+		"one that can't be opened": {Name: "foo-consumer", Environment: "dev", Env: map[string]string{
+			"MIMIR_OBJECT_STORE_ENDPOINT": "https://nowhere.example",
+		}},
+	}
+	for name, deployable := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := systemtest.New(t)
+			d := h.NewDeployable(t, deployable)
+
+			cfg := foo.NewFooConfig(t.Context(), d.ClientOptions()...)
+			if got := cfg.GetFoo(); got != "default" {
+				t.Errorf("GetFoo() = %q, want the Default %q", got, "default")
+			}
+			if err := d.AwaitRegistration(t); err != nil {
+				t.Fatalf("Registration failed: %v", err)
+			}
+			if got := h.Namespaces(t, foo.FooConfigName); len(got) != 1 || got[0].Namespace != fooConsumerDev {
+				t.Errorf("registered Namespaces = %+v, want only %+v", got, fooConsumerDev)
+			}
+		})
+	}
+}

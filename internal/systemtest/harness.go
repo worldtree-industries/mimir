@@ -188,6 +188,9 @@ type Deployable struct {
 	// Env holds further environment variables, such as the ones MimirClient's
 	// Items start from.
 	Env map[string]string
+	// NoObjectStore gives the client no object storage at all, as when no S3
+	// variables are set.
+	NoObjectStore bool
 }
 
 // RunningDeployable is a Deployable placed in a Harness, recording what its
@@ -241,10 +244,12 @@ func (d *RunningDeployable) ClientOptions() []client.Option {
 
 	opts := []client.Option{
 		client.WithGetenv(func(key string) string { return env[key] }),
-		client.WithObjectStores(d.h.openEndpoint),
 		client.WithClock(d.h.Clock),
 		client.WithLogger(log.GetLoggerTo("mimir-client", &d.logs)),
 		client.WithEventHandler(d.record),
+	}
+	if !d.NoObjectStore {
+		opts = append(opts, client.WithObjectStores(d.h.openEndpoint))
 	}
 	if d.BuildPath != "" {
 		opts = append(opts, client.WithBuildPath(d.BuildPath))

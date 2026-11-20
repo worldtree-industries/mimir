@@ -149,6 +149,10 @@ func Start(ctx context.Context, def Definition, opts ...Option) *Client {
 	if c.openStore == nil && (objectstore.S3Configured(o.getenv) || c.at.endpoint != "") {
 		c.openStore = s3Opener(o.getenv)
 	}
+	// Registration doesn't need object storage, so it runs whatever happens
+	// to the store.
+	defer func() { go c.registerEvery(ctx) }()
+
 	if c.openStore == nil {
 		c.logger.ErrorContext(ctx, "No object storage configured; running on Defaults only")
 		return c
@@ -163,7 +167,6 @@ func Start(ctx context.Context, def Definition, opts ...Option) *Client {
 	c.poll(startupCtx)
 	cancel()
 
-	go c.registerEvery(ctx)
 	go c.pollEvery(ctx)
 
 	return c

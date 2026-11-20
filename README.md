@@ -104,7 +104,7 @@ To react to changes and errors, pass `client.WithEventHandler` to the constructo
 
 ## mimir-server
 
-`mimir-server` stores Registrations and Overrides in Postgres (`DATABASE_URL`; it migrates the schema at startup) and publishes each Namespace's Snapshot to object storage: after the Namespace's first Registration, and after every change to an Override whose Scope covers it. Its API, for the private network only (there is no authentication yet):
+`mimir-server` stores Registrations and Overrides in Postgres (`DATABASE_URL`; it migrates the schema at startup) and publishes each Namespace's Snapshot to object storage: after the Namespace's first Registration, and after every change to an Override whose Scope covers it. `/readyz` answers 200 only while Postgres and the bucket of every Environment answer, even before anything has registered. Its API, for the private network only (there is no authentication yet):
 
 - `POST /v1/registrations`: Registration, sent by clients.
 - `POST /v1/overrides`: create an Override, for example a Config-wide one:

@@ -58,7 +58,8 @@ const ReadyCacheTTL = 5 * time.Second
 // readyTimeout bounds one check of the dependencies.
 const readyTimeout = 3 * time.Second
 
-// Ready reports whether Postgres and object storage both answer. It checks at
+// Ready reports whether Postgres and object storage (every Environment's
+// bucket) answer. It checks at
 // most once per ReadyCacheTTL and otherwise repeats the last answer.
 func (s *Service) Ready(ctx context.Context) bool {
 	c := &s.ready
@@ -86,19 +87,19 @@ func (s *Service) checkDependencies(ctx context.Context) bool {
 		return false
 	}
 
-	// Object storage is probed through the bucket of a Namespace we publish
-	// to; with none known there is nothing to publish yet.
-	ns, ok, err := s.store.AnyNamespace(ctx)
+	// Object storage is probed through every Environment's bucket, since a
+	// Snapshot may be published to any of them, even before anything has
+	// registered.
+	environments, err := s.store.Environments(ctx)
 	if err != nil {
 		s.logger.WarnContext(ctx, "Not ready: Postgres can't answer", "error", err)
 		return false
 	}
-	if !ok {
-		return true
-	}
-	if err = s.snapshots.Reachable(ctx, ns); err != nil {
-		s.logger.WarnContext(ctx, "Not ready: object storage unreachable", "error", err)
-		return false
+	for _, environment := range environments {
+		if err = s.snapshots.Reachable(ctx, environment); err != nil {
+			s.logger.WarnContext(ctx, "Not ready: object storage unreachable", "error", err)
+			return false
+		}
 	}
 
 	return true

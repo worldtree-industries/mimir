@@ -48,14 +48,19 @@ func (s *Snapshots) Publish(ctx context.Context, ns models.Namespace, snap model
 	return nil
 }
 
-// Reachable reports whether object storage answers for ns's bucket. A missing
-// Snapshot still means it does; only a failure to get an answer is an error.
-func (s *Snapshots) Reachable(ctx context.Context, ns models.Namespace) error {
-	loc := models.SnapshotLocationFor(s.prefix, ns)
+// probeKey is the object readiness asks for. No Snapshot can have it, since
+// every Snapshot's key holds a "/".
+const probeKey = "readiness-probe"
 
-	_, err := s.store.Get(ctx, loc.Bucket, loc.Key, "")
+// Reachable reports whether object storage answers for environment's bucket,
+// by reading an object that isn't there: not found means the bucket answers;
+// any other failure is an error.
+func (s *Snapshots) Reachable(ctx context.Context, environment string) error {
+	bucket := models.SnapshotLocationFor(s.prefix, models.Namespace{Environment: environment}).Bucket
+
+	_, err := s.store.Get(ctx, bucket, probeKey, "")
 	if err != nil && !errors.Is(err, objectstore.ErrNotFound) && !errors.Is(err, objectstore.ErrNotModified) {
-		return fmt.Errorf("reach object storage bucket %s: %w", loc.Bucket, err)
+		return fmt.Errorf("reach object storage bucket %s: %w", bucket, err)
 	}
 
 	return nil

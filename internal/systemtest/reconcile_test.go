@@ -1,6 +1,7 @@
 package systemtest_test
 
 import (
+	"errors"
 	"net/http"
 	"reflect"
 	"testing"
@@ -156,5 +157,35 @@ func TestReadyzChecksDependenciesAtMostOncePerCacheWindow(t *testing.T) {
 
 	if after := h.StoreCalls(); after != before {
 		t.Errorf("20 probes made %d object storage calls, want none inside the cache window", after-before)
+	}
+}
+
+func TestReadyzProbesEveryEnvironmentsBucketOnAFreshServer(t *testing.T) {
+	h := systemtest.New(t)
+
+	// Nothing has registered, so there is no Snapshot yet, but object
+	// storage is still checked.
+	if got := h.Ready(t); got != http.StatusOK {
+		t.Fatalf("/readyz on a fresh server with everything up: %d, want 200", got)
+	}
+
+	h.FailObjectStore(true)
+	h.AdvancePastReadinessCache()
+	if got := h.Ready(t); got != http.StatusServiceUnavailable {
+		t.Errorf("/readyz on a fresh server with object storage down: %d, want 503", got)
+	}
+	h.FailObjectStore(false)
+
+	// Every Environment's bucket is probed, so one that can't be read is
+	// enough to be unready.
+	h.Store.SetGetFault(func(bucket, _, _ string) error {
+		if bucket == "mimir-prod" {
+			return errors.New("access denied")
+		}
+		return nil
+	})
+	h.AdvancePastReadinessCache()
+	if got := h.Ready(t); got != http.StatusServiceUnavailable {
+		t.Errorf("/readyz with mimir-prod unreadable: %d, want 503", got)
 	}
 }

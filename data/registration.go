@@ -2,11 +2,8 @@ package data
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 
 	"github.com/worldtree-industries/mimir/models"
 )
@@ -145,23 +142,6 @@ func (s *Store) AllNamespaces(ctx context.Context) ([]models.Namespace, error) {
 	}
 
 	return namespaces, nil
-}
-
-// AnyNamespace returns one known Namespace, or false when there is none. It
-// is cheap, unlike AllNamespaces.
-func (s *Store) AnyNamespace(ctx context.Context) (models.Namespace, bool, error) {
-	var ns models.Namespace
-	err := s.q(ctx).QueryRow(ctx, `
-		SELECT config, deployable, environment FROM namespaces
-		ORDER BY id LIMIT 1`).Scan(&ns.Config, &ns.Deployable, &ns.Environment)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return models.Namespace{}, false, nil
-	}
-	if err != nil {
-		return models.Namespace{}, false, fmt.Errorf("find a Namespace: %w", err)
-	}
-
-	return ns, true, nil
 }
 
 // NamespaceKnown reports whether ns is registered.

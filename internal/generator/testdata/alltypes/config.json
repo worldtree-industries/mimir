@@ -1,0 +1,18 @@
+{
+  "namespace": "AllTypesConfig",
+  "display_name": "Every type",
+  "items": [
+    {"name": "s", "description": "A string", "type": "string", "value": "hi"},
+    {"name": "i", "description": "An int", "type": "int", "value": "-7"},
+    {"name": "b", "description": "A bool", "type": "bool", "value": "true"},
+    {"name": "f", "description": "A float", "type": "float", "value": "2.5"},
+    {"name": "s_arr", "description": "Strings", "type": "string_array", "value": "[\"a\", \"b\", \"a\"]"},
+    {"name": "i_arr", "description": "Ints", "type": "int_array", "value": "[3, 1, 3]"},
+    {"name": "b_arr", "description": "Bools", "type": "bool_array", "value": "[true, false, true]"},
+    {"name": "f_arr", "description": "Floats", "type": "float_array", "value": "[1.5, 2.5]"},
+    {"name": "s_set", "description": "String set", "type": "string_set", "value": "[\"a\", \"b\", \"a\"]"},
+    {"name": "i_set", "description": "Int set", "type": "int_set", "value": "[3, 1, 3]"},
+    {"name": "b_set", "description": "Bool set", "type": "bool_set", "value": "[true, false, true]"},
+    {"name": "f_set", "description": "Float set", "type": "float_set", "value": "[1.5, 1.5]"}
+  ]
+}

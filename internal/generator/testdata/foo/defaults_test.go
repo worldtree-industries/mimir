@@ -30,3 +30,13 @@ func TestGettersReturnDefaults(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigNameWithoutDisplayName(t *testing.T) {
+	want := "github.com/worldtree-industries/mimir/internal/generator/testdata/foo.FooConfig"
+	if foo.FooConfigName != want {
+		t.Errorf("name = %q, want %q", foo.FooConfigName, want)
+	}
+	if foo.FooConfigDisplayName != "" {
+		t.Errorf("display name = %q, want empty", foo.FooConfigDisplayName)
+	}
+}

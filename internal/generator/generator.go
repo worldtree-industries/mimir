@@ -22,27 +22,56 @@ type Item struct {
 
 // File is the contents of a config file: one Config and its Items.
 type File struct {
-	Namespace string `json:"namespace"`
-	Items     []Item `json:"items"`
+	Namespace   string `json:"namespace"`
+	DisplayName string `json:"display_name"`
+	Items       []Item `json:"items"`
 }
 
 type templateData struct {
 	PackageName    string
 	ConfigTypeName string
+	ConfigName     string
+	DisplayName    string
 	Items          []Item
 	NeedsSet       bool
 	NeedsJSON      bool
 }
 
+// ConfigName is the globally unique name of the Config type typeName declared
+// in the Go package at importPath: "<import path>.<type name>".
+func ConfigName(importPath, typeName string) string {
+	return importPath + "." + typeName
+}
+
+func checkUniqueItemNames(items []Item) error {
+	seen := make(map[string]bool, len(items))
+	for _, item := range items {
+		if seen[item.Name] {
+			return fmt.Errorf("duplicate Item name %q", item.Name)
+		}
+		seen[item.Name] = true
+	}
+
+	return nil
+}
+
 // Generate returns the formatted Go source for the Config defined by the
-// config file contents in input, declared in package packageName.
-func Generate(input []byte, packageName string) ([]byte, error) {
+// config file contents in input, declared in package packageName whose import
+// path is importPath. The generated code exposes the derived Config name as
+// the constant <Type>Name and the optional display name as <Type>DisplayName.
+func Generate(input []byte, packageName, importPath string) ([]byte, error) {
 	var cfg File
 	if err := json.Unmarshal(input, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
+	if err := checkUniqueItemNames(cfg.Items); err != nil {
+		return nil, err
+	}
+
 	data := templateData{
+		ConfigName:     ConfigName(importPath, cfg.Namespace),
+		DisplayName:    cfg.DisplayName,
 		PackageName:    packageName,
 		ConfigTypeName: cfg.Namespace,
 		Items:          cfg.Items,
@@ -198,6 +227,14 @@ import (
 	"github.com/dfryer1193/mjolnir/utils/set"
 {{- end}}
 )
+
+// {{.ConfigTypeName}}Name is the globally unique name of the Config, derived
+// from its Go package path and type.
+const {{.ConfigTypeName}}Name = "{{escapeValue .ConfigName}}"
+
+// {{.ConfigTypeName}}DisplayName is the optional short display name from the
+// config file; empty when unset.
+const {{.ConfigTypeName}}DisplayName = "{{escapeValue .DisplayName}}"
 
 // {{.ConfigTypeName}} holds the Items of the {{.ConfigTypeName}} Config.
 type {{.ConfigTypeName}} struct {

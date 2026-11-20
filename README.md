@@ -72,6 +72,20 @@ func main() {
 }
 ```
 
+## Config file format
+
+A config file is JSON with one Config:
+
+- `namespace` (required): the Go type name of the generated Config, e.g. `MyAppConfig`.
+- `display_name` (optional): a short human-friendly name for the API and future UI.
+- `items`: the Config's Items, each with `name`, `description`, `type` and `value` (its Default, as a string; collections are JSON arrays in a string).
+
+Item names must be unique within the file: generation fails, naming the Item and writing no output, if two Items share a name.
+
+### Derived Config name
+
+Each Config gets a globally unique name derived from its Go package import path and type, `<import path>.<type name>`, for example `github.com/acme/kafka.KafkaConfig`. Two libraries that both call their Config "kafka" therefore never collide. The generated code exposes it as the constant `<Type>Name` (for example `KafkaConfigName`), and the display name as `<Type>DisplayName`, which is empty when the config file sets none.
+
 ## Supported Types
 
 - `string` - String values

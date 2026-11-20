@@ -10,6 +10,14 @@ import (
 	"github.com/dfryer1193/mjolnir/utils/set"
 )
 
+// FooConfigName is the globally unique name of the Config, derived
+// from its Go package path and type.
+const FooConfigName = "github.com/worldtree-industries/mimir/internal/generator/testdata/foo.FooConfig"
+
+// FooConfigDisplayName is the optional short display name from the
+// config file; empty when unset.
+const FooConfigDisplayName = ""
+
 // FooConfig holds the Items of the FooConfig Config.
 type FooConfig struct {
 	rwMux  sync.RWMutex

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/worldtree-industries/mimir/internal/generator"
@@ -41,10 +42,14 @@ func TestGoldenCases(t *testing.T) {
 	}
 }
 
+const modulePath = "github.com/worldtree-industries/mimir"
+
 func generate(t *testing.T, configPath, packageName string) []byte {
 	t.Helper()
 
-	got, err := generator.Generate(readFile(t, configPath), packageName)
+	importPath := modulePath + "/internal/generator/testdata/" + packageName
+
+	got, err := generator.Generate(readFile(t, configPath), packageName, importPath)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -68,5 +73,23 @@ func writeFile(t *testing.T, path string, data []byte) {
 
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDuplicateItemNamesAreRejected(t *testing.T) {
+	input := []byte(`{"namespace":"DupConfig","items":[
+		{"name":"a","description":"","type":"int","value":"1"},
+		{"name":"b","description":"","type":"int","value":"1"},
+		{"name":"a","description":"","type":"string","value":"x"}]}`)
+
+	got, err := generator.Generate(input, "dup", "example.com/dup")
+	if err == nil {
+		t.Fatal("expected an error for duplicate Item names")
+	}
+	if !strings.Contains(err.Error(), `"a"`) {
+		t.Errorf("error should name the Item: %v", err)
+	}
+	if got != nil {
+		t.Errorf("no output should be produced, got %d bytes", len(got))
 	}
 }

@@ -114,7 +114,7 @@ To react to changes and errors, pass `client.WithEventHandler` to the constructo
   The Item must be registered. Errors are RFC 9457 problem documents.
 - `GET /v1/configs`, `GET /v1/items`, `GET /v1/namespaces`: what Registration taught the server, with when each Item and Namespace was first and last registered. `items` and `namespaces` take an optional `config` query parameter.
 
-Registration only adds: a version that drops an Item leaves it and its Overrides in place. Once an hour the server expires what no Deployable has registered for 60 days. An Item goes with its Overrides (each recorded in the history as deleted by `mimir-server:expiry`) and the Snapshots that held them are republished; a Namespace goes with its Snapshot in object storage.
+Registration only adds: a version that drops an Item leaves it and its Overrides in place. Once an hour the server expires what no Deployable has registered for 60 days. An Item goes with its Overrides (each recorded in the History as `expired`, with Caller `mimir-server:expiry`) and the Snapshots that held them are republished; a Namespace goes with its Snapshot in object storage.
 
   Narrow the Scope with `"deployable"`, `"environment"` or both. When several Overrides apply to an Item in a Namespace, the most specific Scope wins: Deployable and Environment, then Deployable, then Environment, then Config-wide (ADR 0003).
 - `PUT /v1/overrides/{id}`: set an Override's value (`{"value": "600"}`). `DELETE /v1/overrides/{id}` removes it; the next most specific Override, or the Default, takes effect.

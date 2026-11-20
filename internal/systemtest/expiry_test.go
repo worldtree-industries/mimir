@@ -67,8 +67,8 @@ func TestItemUnregisteredForSixtyDaysExpiresWithItsOverrides(t *testing.T) {
 		t.Fatalf("history = %+v, want two creations and the expiry of banner's Override", history)
 	}
 	expired := history[2]
-	if expired.Action != models.HistoryDeleted || expired.Item != bannerKey() || expired.Scope.Config != shopConfig {
-		t.Errorf("last history entry = %+v, want banner's Override deleted", expired)
+	if expired.Action != models.HistoryExpired || expired.Item != bannerKey() || expired.Scope.Config != shopConfig {
+		t.Errorf("last history entry = %+v, want banner's Override expired", expired)
 	}
 	if expired.OldValue == nil || *expired.OldValue != "sale" || expired.NewValue != nil {
 		t.Errorf("expiry recorded old/new = %v/%v, want sale/none", expired.OldValue, expired.NewValue)
@@ -207,7 +207,7 @@ func TestReplicasExpireEachItemOnce(t *testing.T) {
 		t.Errorf("Items after sixty days = %v, want none", got)
 	}
 	entries := h.History(t, models.Scope{Config: shopConfig})
-	if len(entries) != 2 || entries[1].Action != models.HistoryDeleted {
+	if len(entries) != 2 || entries[1].Action != models.HistoryExpired {
 		t.Errorf("history = %+v, want the creation and one expiry", entries)
 	}
 }

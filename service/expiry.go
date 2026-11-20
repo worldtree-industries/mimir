@@ -88,7 +88,7 @@ func (s *Service) expireInTx(ctx context.Context, cutoff time.Time) (expired, er
 	}
 	for _, item := range items {
 		for _, o := range item.Overrides {
-			if err = s.recordHistory(ctx, models.HistoryDeleted, o.Scope, o.Item, &o.Value, nil); err != nil {
+			if err = s.recordHistory(ctx, models.HistoryExpired, o.Scope, o.Item, &o.Value, nil); err != nil {
 				return expired{}, err
 			}
 			gone.overrideScopes = append(gone.overrideScopes, o.Scope)

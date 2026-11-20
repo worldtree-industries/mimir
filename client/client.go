@@ -15,8 +15,10 @@ import (
 // often a client polls its Snapshots unless tuned.
 const DefaultPollInterval = 30 * time.Second
 
-// defaultServerURL is the Default of MimirClient's server URL.
-const defaultServerURL = "http://mimir-server.mimir-config.svc.cluster.local"
+// defaultServerURL is the Default of MimirClient's server URL. It names the
+// Service without the cluster domain, so it resolves from any namespace
+// through the pod's DNS search path whatever the cluster domain is.
+const defaultServerURL = "http://mimir-server.mimir-config"
 
 // startupPollTimeout bounds the first poll, which Start waits for so a
 // program begins on its real values.

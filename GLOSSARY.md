@@ -50,6 +50,18 @@ _Avoid_: Value (on its own), setting, patch
 The rule that picks one Override when several apply to the same Item in a Namespace: the most specific Scope wins.
 _Avoid_: Priority, ordering, resolution order
 
+**History**:
+The append-only record of every change to an Override: each create, update, delete and expiry, with the old and new values, when it happened and its Caller.
+_Avoid_: Audit log, changelog, events
+
+**Caller**:
+Whoever made a change recorded in the History: the person or system named by the request, or Mimir itself for an expiry.
+_Avoid_: User, actor, author
+
+**Catalogue**:
+What Mimir knows has been registered: every Config, its Items and its Namespaces, with when each was last registered.
+_Avoid_: Registry, inventory, schema
+
 **Snapshot**:
 The published values for one Namespace, with Precedence already applied, which its clients read to learn their values.
 _Avoid_: Cache, export, dump

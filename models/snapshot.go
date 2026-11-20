@@ -1,9 +1,6 @@
 package models
 
-import (
-	"cmp"
-	"slices"
-)
+import "slices"
 
 // DefaultBucketPrefix is the bucket prefix used unless one is configured.
 const DefaultBucketPrefix = "mimir"
@@ -28,9 +25,7 @@ func NewSnapshot(values []SnapshotValue) Snapshot {
 	if sorted == nil {
 		sorted = []SnapshotValue{}
 	}
-	slices.SortFunc(sorted, func(a, b SnapshotValue) int {
-		return cmp.Or(cmp.Compare(a.Item.Name, b.Item.Name), cmp.Compare(a.Item.Type, b.Item.Type))
-	})
+	slices.SortFunc(sorted, func(a, b SnapshotValue) int { return a.Item.Compare(b.Item) })
 
 	return Snapshot{Values: sorted}
 }

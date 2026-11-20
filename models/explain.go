@@ -1,23 +1,23 @@
 package models
 
-import (
-	"cmp"
-	"slices"
-)
+import "slices"
 
-// The kinds of Source an Item's effective value can come from.
+// SourceKind is what kind of Source an Item's effective value comes from.
+type SourceKind string
+
+// The kinds of Source.
 const (
 	// SourceDefault means no Override applies, so the Item has its Default.
-	SourceDefault = "default"
+	SourceDefault SourceKind = "default"
 	// SourceOverride means an Override won by Precedence.
-	SourceOverride = "override"
+	SourceOverride SourceKind = "override"
 )
 
 // Source says where an Item's effective value comes from: the Default, or the
 // Override that won by Precedence. Override is set only for SourceOverride.
 type Source struct {
-	Kind     string    `json:"kind"`
-	Override *Override `json:"override,omitempty"`
+	Kind     SourceKind `json:"kind"`
+	Override *Override  `json:"override,omitempty"`
 }
 
 // ExplainedItem is one Item's effective value in a Namespace and its Source.
@@ -59,9 +59,7 @@ func Explain(ns Namespace, items []Item, overrides []Override) Explanation {
 		}
 		explained = append(explained, e)
 	}
-	slices.SortFunc(explained, func(a, b ExplainedItem) int {
-		return cmp.Or(cmp.Compare(a.Item.Name, b.Item.Name), cmp.Compare(a.Item.Type, b.Item.Type))
-	})
+	slices.SortFunc(explained, func(a, b ExplainedItem) int { return a.Item.Compare(b.Item) })
 
 	return Explanation{Namespace: ns, Items: explained}
 }

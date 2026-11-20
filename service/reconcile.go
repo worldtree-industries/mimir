@@ -22,13 +22,19 @@ func (s *Service) Reconcile(ctx context.Context) {
 	}
 
 	for _, ns := range namespaces {
-		s.publishLogged(ctx, ns)
+		s.republishNamespace(ctx, ns)
 	}
 }
 
 // RunReconcile calls Reconcile every interval, by the Service's clock, until
-// ctx is done. onReconcile, if not nil, is called after each one.
-func (s *Service) RunReconcile(ctx context.Context, interval time.Duration, onReconcile func()) {
+// ctx is done. finished, if not nil, is called after each one.
+func (s *Service) RunReconcile(ctx context.Context, interval time.Duration, finished func()) {
+	s.every(ctx, interval, s.Reconcile, finished)
+}
+
+// every calls run every interval, by the Service's clock, until ctx is done,
+// and finished, if not nil, after each run.
+func (s *Service) every(ctx context.Context, interval time.Duration, run func(context.Context), finished func()) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -36,9 +42,9 @@ func (s *Service) RunReconcile(ctx context.Context, interval time.Duration, onRe
 		case <-s.clock.After(interval):
 		}
 
-		s.Reconcile(ctx)
-		if onReconcile != nil {
-			onReconcile()
+		run(ctx)
+		if finished != nil {
+			finished()
 		}
 	}
 }

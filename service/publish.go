@@ -7,19 +7,19 @@ import (
 	"github.com/worldtree-industries/mimir/models"
 )
 
-// publishScopeLogged publishes the Snapshot of every Namespace scope covers
-// and no other. Failures are logged, not returned: the change that prompted
-// publishing is already stored, and a later publish rebuilds the Snapshot
-// from Postgres.
-func (s *Service) publishScopeLogged(ctx context.Context, scope models.Scope) {
+// republishScope publishes, from Postgres, the Snapshot of every Namespace
+// scope covers and no other. Failures are logged, not returned: the change
+// that prompted publishing is already stored, and a later publish (at the
+// latest, the next reconcile) rebuilds the Snapshot.
+func (s *Service) republishScope(ctx context.Context, scope models.Scope) {
 	namespaces, err := s.store.Namespaces(ctx, scope.Config)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "Can't publish Snapshots", "config", scope.Config, "error", err)
+		s.logger.ErrorContext(ctx, "Can't publish Snapshots", "scope", scope, "error", err)
 		return
 	}
 	overrides, err := s.store.Overrides(ctx, scope.Config)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "Can't publish Snapshots", "config", scope.Config, "error", err)
+		s.logger.ErrorContext(ctx, "Can't publish Snapshots", "scope", scope, "error", err)
 		return
 	}
 
@@ -37,20 +37,20 @@ func (s *Service) publishScopeLogged(ctx context.Context, scope models.Scope) {
 	}
 }
 
-// publishLogged publishes ns's Snapshot, logging any failure.
-func (s *Service) publishLogged(ctx context.Context, ns models.Namespace) {
-	if err := s.publish(ctx, ns); err != nil {
+// republishNamespace publishes ns's Snapshot from Postgres, logging any
+// failure as republishScope does.
+func (s *Service) republishNamespace(ctx context.Context, ns models.Namespace) {
+	if err := s.writeSnapshot(ctx, ns); err != nil {
 		s.logPublishFailure(ctx, ns, err)
 	}
 }
 
 func (s *Service) logPublishFailure(ctx context.Context, ns models.Namespace, err error) {
-	s.logger.ErrorContext(ctx, "Can't publish Snapshot",
-		"config", ns.Config, "deployable", ns.Deployable, "environment", ns.Environment, "error", err)
+	s.logger.ErrorContext(ctx, "Can't publish Snapshot", "namespace", ns, "error", err)
 }
 
-// publish rebuilds ns's Snapshot from Postgres and writes it.
-func (s *Service) publish(ctx context.Context, ns models.Namespace) error {
+// writeSnapshot rebuilds ns's Snapshot from Postgres and writes it.
+func (s *Service) writeSnapshot(ctx context.Context, ns models.Namespace) error {
 	overrides, err := s.store.Overrides(ctx, ns.Config)
 	if err != nil {
 		return fmt.Errorf("read Overrides: %w", err)

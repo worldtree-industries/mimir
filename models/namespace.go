@@ -1,5 +1,10 @@
 package models
 
+import (
+	"cmp"
+	"log/slog"
+)
+
 // Namespace is one concrete use of a Config: the Config, the Deployable using
 // it, and the Environment it runs in.
 type Namespace struct {
@@ -13,6 +18,21 @@ type Namespace struct {
 type ItemRef struct {
 	Name string `json:"name"`
 	Type Type   `json:"type"`
+}
+
+// Compare orders ItemRefs by name, then type: the order Snapshots and
+// explanations list Items in. It returns -1, 0 or +1, as [cmp.Compare].
+func (r ItemRef) Compare(other ItemRef) int {
+	return cmp.Or(cmp.Compare(r.Name, other.Name), cmp.Compare(r.Type, other.Type))
+}
+
+// LogValue logs the Namespace as its three parts.
+func (ns Namespace) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("config", ns.Config),
+		slog.String("deployable", ns.Deployable),
+		slog.String("environment", ns.Environment),
+	)
 }
 
 // Ref returns the Item's identity.

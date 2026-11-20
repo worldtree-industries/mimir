@@ -48,7 +48,7 @@ func (s *Service) CreateOverride(ctx context.Context, o models.Override) (models
 		return models.Override{}, err
 	}
 
-	s.publishScopeLogged(ctx, o.Scope)
+	s.republishScope(ctx, o.Scope)
 
 	return created, nil
 }
@@ -80,7 +80,7 @@ func (s *Service) UpdateOverride(ctx context.Context, id int64, value string) (m
 		return models.Override{}, err
 	}
 
-	s.publishScopeLogged(ctx, updated.Scope)
+	s.republishScope(ctx, updated.Scope)
 
 	return updated, nil
 }
@@ -105,7 +105,7 @@ func (s *Service) DeleteOverride(ctx context.Context, id int64) error {
 		return err
 	}
 
-	s.publishScopeLogged(ctx, deleted.Scope)
+	s.republishScope(ctx, deleted.Scope)
 
 	return nil
 }

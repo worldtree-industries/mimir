@@ -111,7 +111,7 @@ func (h handlers) register(w http.ResponseWriter, r *http.Request) error {
 func (h handlers) environments(w http.ResponseWriter, r *http.Request) error {
 	names, err := h.svc.Environments(r.Context())
 	if err != nil {
-		return err
+		return problem(err)
 	}
 
 	return h.codec.Respond(w, r, http.StatusOK, map[string][]string{"environments": names})

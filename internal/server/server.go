@@ -36,15 +36,21 @@ type Config struct {
 	// ReconcileInterval is how often every Snapshot is republished from
 	// Postgres. Zero means DefaultReconcileInterval.
 	ReconcileInterval time.Duration
-	// OnReconcile, if set, is called after each reconcile. Tests use it to
-	// know one finished.
-	OnReconcile func()
 	// ExpiryInterval is how often the server looks for Items and Namespaces
 	// that went unregistered for 60 days. Zero means DefaultExpiryInterval.
 	ExpiryInterval time.Duration
-	// OnExpire, if set, is called after each such look. Tests use it to know
-	// one finished.
-	OnExpire func()
+	// TestHooks let tests know when background work finished. A real server
+	// leaves them unset.
+	TestHooks TestHooks
+}
+
+// TestHooks are told when the server's background work finishes, so the
+// system tests can await it instead of sleeping. Either may be nil.
+type TestHooks struct {
+	// ReconcileFinished is called after each reconcile.
+	ReconcileFinished func()
+	// ExpiryFinished is called after each run of expiry.
+	ExpiryFinished func()
 }
 
 // DefaultReconcileInterval is how often Snapshots are republished by default.
@@ -100,13 +106,13 @@ func New(ctx context.Context, cfg Config) (*router.Router, error) {
 	if interval <= 0 {
 		interval = DefaultReconcileInterval
 	}
-	go svc.RunReconcile(ctx, interval, cfg.OnReconcile)
+	go svc.RunReconcile(ctx, interval, cfg.TestHooks.ReconcileFinished)
 
 	expiryInterval := cfg.ExpiryInterval
 	if expiryInterval <= 0 {
 		expiryInterval = DefaultExpiryInterval
 	}
-	go svc.RunExpiry(ctx, expiryInterval, cfg.OnExpire)
+	go svc.RunExpiry(ctx, expiryInterval, cfg.TestHooks.ExpiryFinished)
 
 	return r, nil
 }

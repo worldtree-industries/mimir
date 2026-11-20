@@ -30,7 +30,7 @@ func (s *Service) Register(ctx context.Context, reg models.Registration) error {
 	}
 
 	if isNew {
-		s.publishLogged(ctx, reg.Namespace)
+		s.republishNamespace(ctx, reg.Namespace)
 	}
 
 	return nil

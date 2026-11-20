@@ -67,11 +67,11 @@ func (s *Service) Expire(ctx context.Context) error {
 	for _, ns := range gone.namespaces {
 		if err = s.snapshots.Delete(ctx, ns); err != nil {
 			s.logger.ErrorContext(ctx, "Can't delete the Snapshot of an expired Namespace",
-				"config", ns.Config, "deployable", ns.Deployable, "environment", ns.Environment, "error", err)
+				"namespace", ns, "error", err)
 		}
 	}
 	for _, scope := range gone.overrideScopes {
-		s.publishScopeLogged(ctx, scope)
+		s.republishScope(ctx, scope)
 	}
 
 	return nil
@@ -108,20 +108,11 @@ func (s *Service) expireInTx(ctx context.Context, cutoff time.Time) (expired, er
 }
 
 // RunExpiry calls Expire every interval, by the Service's clock, until ctx is
-// done. Failures are logged. onExpire, if not nil, is called after each run.
-func (s *Service) RunExpiry(ctx context.Context, interval time.Duration, onExpire func()) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.clock.After(interval):
-		}
-
+// done. Failures are logged. finished, if not nil, is called after each run.
+func (s *Service) RunExpiry(ctx context.Context, interval time.Duration, finished func()) {
+	s.every(ctx, interval, func(ctx context.Context) {
 		if err := s.Expire(ctx); err != nil {
 			s.logger.ErrorContext(ctx, "Can't expire what went unregistered", "error", err)
 		}
-		if onExpire != nil {
-			onExpire()
-		}
-	}
+	}, finished)
 }

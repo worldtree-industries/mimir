@@ -149,17 +149,19 @@ func (h *Harness) startServer(t *testing.T) *Replica {
 		BucketPrefix: h.prefix,
 		Clock:        h.Clock,
 		Logger:       log.GetLoggerTo("mimir-server", t.Output()),
-		OnReconcile: func() {
-			select {
-			case r.reconciled <- struct{}{}:
-			default:
-			}
-		},
-		OnExpire: func() {
-			select {
-			case r.expired <- struct{}{}:
-			default:
-			}
+		TestHooks: server.TestHooks{
+			ReconcileFinished: func() {
+				select {
+				case r.reconciled <- struct{}{}:
+				default:
+				}
+			},
+			ExpiryFinished: func() {
+				select {
+				case r.expired <- struct{}{}:
+				default:
+				}
+			},
 		},
 	})
 	if err != nil {

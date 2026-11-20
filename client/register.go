@@ -19,11 +19,37 @@ const registrationTimeout = 10 * time.Second
 // registrationPath is mimir-server's Registration endpoint.
 const registrationPath = "/v1/registrations"
 
+// DefaultRegistrationInterval is how often a running client registers again,
+// so Items its Deployable still declares never expire (ADR 0004).
+const DefaultRegistrationInterval = 24 * time.Hour
+
+// RegistrationRetryInterval is how soon a client tries again after a
+// Registration failed.
+const RegistrationRetryInterval = 5 * time.Minute
+
+// registerEvery registers at once and then again every
+// DefaultRegistrationInterval, or after RegistrationRetryInterval when the
+// last attempt failed, until ctx is done.
+func (c *Client) registerEvery(ctx context.Context) {
+	for {
+		wait := DefaultRegistrationInterval
+		if err := c.register(ctx); err != nil {
+			wait = RegistrationRetryInterval
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-c.clock.After(wait):
+		}
+	}
+}
+
 // register tells mimir-server about the Namespace and the Config's Items,
 // and then about MimirClient's, at the server URL the settings name now. A
 // failure is logged and reported, in one EventRegistered for both; it never
 // affects the values the program reads.
-func (c *Client) register(ctx context.Context) {
+func (c *Client) register(ctx context.Context) error {
 	var errs []error
 	for _, p := range []*configPoll{c.user, c.self} {
 		err := c.sendRegistration(ctx, p)
@@ -33,7 +59,10 @@ func (c *Client) register(ctx context.Context) {
 		}
 		errs = append(errs, err)
 	}
-	c.emit(Event{Kind: EventRegistered, Err: errors.Join(errs...)})
+	err := errors.Join(errs...)
+	c.emit(Event{Kind: EventRegistered, Err: err})
+
+	return err
 }
 
 func (c *Client) sendRegistration(ctx context.Context, p *configPoll) error {

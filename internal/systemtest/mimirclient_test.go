@@ -279,16 +279,22 @@ func TestRestartBeginsAgainFromTheStartingLocation(t *testing.T) {
 	}
 }
 
-func TestServerURLOverrideIsUsedForRegistration(t *testing.T) {
+func TestServerURLOverrideTakesEffectLive(t *testing.T) {
 	h := systemtest.New(t)
 	startFooConsumer(t, h)
-	h.CreateOverride(t, clientSetting(client.ServerURLItem, h.URL))
 
-	// A pod whose MIMIR_SERVER_URL points nowhere reads the server URL from
-	// its settings before registering.
+	// A pod whose MIMIR_SERVER_URL points nowhere can't register.
 	d := h.NewDeployable(t, systemtest.Deployable{Name: "foo-consumer", Environment: "dev", ServerDown: true})
 	foo.NewFooConfig(t.Context(), d.ClientOptions()...)
+	if err := d.AwaitRegistration(t); err == nil {
+		t.Fatal("Registration against a stopped server succeeded")
+	}
+
+	// The fix arrives as an Override, and the next attempt uses it.
+	h.CreateOverride(t, clientSetting(client.ServerURLItem, h.URL))
+	h.NextPoll(t)
+	h.Advance(t, client.RegistrationRetryInterval)
 	if err := d.AwaitRegistration(t); err != nil {
-		t.Errorf("Registration with the server URL from the Override failed: %v", err)
+		t.Errorf("Registration retried after the server URL Override failed: %v", err)
 	}
 }

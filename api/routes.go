@@ -31,6 +31,12 @@ import (
 //	GET  /v1/history        the history of Override changes, oldest first (200);
 //	                        filter with the config, deployable and environment
 //	                        query parameters
+//	GET  /v1/configs        the Configs Mimir knows (200)
+//	GET  /v1/items          the Items Mimir knows, with when they were last
+//	                        registered (200); narrow with the config query
+//	                        parameter
+//	GET  /v1/namespaces     the Namespaces Mimir knows (200); narrow with the
+//	                        config query parameter
 //
 // Writes are attributed to the X-Mimir-Caller header, else to the address the
 // request came from.
@@ -50,7 +56,37 @@ func Routes(r chi.Router, svc *service.Service, logger *slog.Logger) {
 	r.Put("/v1/overrides/{id}", handle(h.updateOverride))
 	r.Delete("/v1/overrides/{id}", handle(h.deleteOverride))
 	r.Get("/v1/history", handle(h.history))
+	r.Get("/v1/configs", handle(h.configs))
+	r.Get("/v1/items", handle(h.items))
+	r.Get("/v1/namespaces", handle(h.namespaces))
 	r.Get("/v1/environments", handle(h.environments))
+}
+
+func (h handlers) configs(w http.ResponseWriter, r *http.Request) error {
+	configs, err := h.svc.Configs(r.Context())
+	if err != nil {
+		return problem(err)
+	}
+
+	return h.codec.Respond(w, r, http.StatusOK, configs)
+}
+
+func (h handlers) items(w http.ResponseWriter, r *http.Request) error {
+	items, err := h.svc.Items(r.Context(), r.URL.Query().Get("config"))
+	if err != nil {
+		return problem(err)
+	}
+
+	return h.codec.Respond(w, r, http.StatusOK, items)
+}
+
+func (h handlers) namespaces(w http.ResponseWriter, r *http.Request) error {
+	namespaces, err := h.svc.Namespaces(r.Context(), r.URL.Query().Get("config"))
+	if err != nil {
+		return problem(err)
+	}
+
+	return h.codec.Respond(w, r, http.StatusOK, namespaces)
 }
 
 type handlers struct {

@@ -18,6 +18,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -60,6 +61,8 @@ type Harness struct {
 	dsn    string
 	pool   *db.Pool
 
+	rejectRegistrations atomic.Bool
+
 	mu          sync.Mutex
 	deployables []*RunningDeployable
 	replicas    []*Replica
@@ -96,6 +99,7 @@ type Replica struct {
 	h          *Harness
 	pool       *db.Pool
 	reconciled chan struct{}
+	expired    chan struct{}
 }
 
 // NewReplica starts one more mimir-server on the same database and object
@@ -115,7 +119,12 @@ func (h *Harness) startServer(t *testing.T) *Replica {
 	}
 	t.Cleanup(pool.Close)
 
-	r := &Replica{h: h, pool: pool, reconciled: make(chan struct{}, eventBuffer)}
+	r := &Replica{
+		h:          h,
+		pool:       pool,
+		reconciled: make(chan struct{}, eventBuffer),
+		expired:    make(chan struct{}, eventBuffer),
+	}
 
 	handler, err := server.New(t.Context(), server.Config{
 		Pool:        pool,
@@ -128,11 +137,17 @@ func (h *Harness) startServer(t *testing.T) *Replica {
 			default:
 			}
 		},
+		OnExpire: func() {
+			select {
+			case r.expired <- struct{}{}:
+			default:
+			}
+		},
 	})
 	if err != nil {
 		t.Fatalf("start mimir-server: %v", err)
 	}
-	srv := httptest.NewServer(handler)
+	srv := httptest.NewServer(h.gateRegistrations(handler))
 	t.Cleanup(srv.Close)
 	r.URL = srv.URL
 
@@ -223,11 +238,18 @@ func (d *RunningDeployable) ClientOptions() []client.Option {
 }
 
 func (d *RunningDeployable) record(e client.Event) {
+	// Events nobody awaits are dropped rather than left to block the client.
 	switch e.Kind {
 	case client.EventRegistered:
-		d.registered <- e.Err
+		select {
+		case d.registered <- e.Err:
+		default:
+		}
 	case client.EventPolled:
-		d.polled <- e.Err
+		select {
+		case d.polled <- e.Err:
+		default:
+		}
 	case client.EventValueChanged, client.EventValueRejected:
 		d.mu.Lock()
 		d.valueEvents = append(d.valueEvents, e)
@@ -252,8 +274,9 @@ func (d *RunningDeployable) TakeValueEvents() []client.Event {
 	return events
 }
 
-// AwaitRegistration waits for the client's startup Registration to finish
-// and returns its error.
+// AwaitRegistration waits for the client's next Registration attempt (at
+// startup, a daily re-Registration or a retry) to finish and returns its
+// error.
 func (d *RunningDeployable) AwaitRegistration(t *testing.T) error {
 	t.Helper()
 
@@ -280,7 +303,7 @@ func (h *Harness) NextPollAfter(t *testing.T, interval time.Duration) {
 
 	h.mu.Lock()
 	deployables := h.deployables
-	waiters := len(deployables) + len(h.replicas)
+	waiters := h.waiters()
 	h.mu.Unlock()
 
 	for _, d := range deployables {
@@ -321,7 +344,7 @@ func (h *Harness) Reconcile(t *testing.T) {
 
 	h.mu.Lock()
 	replicas := slices.Clone(h.replicas)
-	waiters := len(h.deployables) + len(replicas)
+	waiters := h.waiters()
 	h.mu.Unlock()
 
 	for _, r := range replicas {

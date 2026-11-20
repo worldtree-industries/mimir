@@ -27,7 +27,11 @@ func (s *Service) publishScopeLogged(ctx context.Context, scope models.Scope) {
 		if !scope.Covers(ns) {
 			continue
 		}
-		if err = s.snapshots.Publish(ctx, ns, snapshotFor(ns, overrides)); err != nil {
+		err = s.snapshots.Publish(ctx, ns, snapshotFor(ns, overrides))
+		if err == nil {
+			err = s.deleteIfExpired(ctx, ns)
+		}
+		if err != nil {
 			s.logPublishFailure(ctx, ns, err)
 		}
 	}
@@ -52,7 +56,27 @@ func (s *Service) publish(ctx context.Context, ns models.Namespace) error {
 		return fmt.Errorf("read Overrides: %w", err)
 	}
 
-	return s.snapshots.Publish(ctx, ns, snapshotFor(ns, overrides))
+	if err = s.snapshots.Publish(ctx, ns, snapshotFor(ns, overrides)); err != nil {
+		return err
+	}
+
+	return s.deleteIfExpired(ctx, ns)
+}
+
+// deleteIfExpired deletes ns's Snapshot if ns is no longer known: expiry
+// removes a Namespace's row before its Snapshot, so a publish that began
+// before and finished after would otherwise leave a Snapshot nothing will
+// ever delete. Checking after the upload covers either order.
+func (s *Service) deleteIfExpired(ctx context.Context, ns models.Namespace) error {
+	known, err := s.store.NamespaceKnown(ctx, ns)
+	if err != nil {
+		return fmt.Errorf("check Namespace is still registered: %w", err)
+	}
+	if known {
+		return nil
+	}
+
+	return s.snapshots.Delete(ctx, ns)
 }
 
 // snapshotFor applies Precedence (ADR 0003) to overrides for ns: for each

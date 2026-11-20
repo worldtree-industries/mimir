@@ -3,7 +3,7 @@
 //
 // It is shared infrastructure rather than a Layer: the data Layer writes
 // through it and the client Layer reads through it, and neither imports the
-// other. Implementations: [Memory] (tests). The S3 one comes with #16.
+// other. Implementations: [Memory] (tests) and [S3] (Ceph RGW and other S3-API stores).
 package objectstore
 
 import (

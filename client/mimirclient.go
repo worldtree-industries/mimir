@@ -190,17 +190,12 @@ func (s *mimirClientValues) setBucketPrefix(value string) error {
 	return nil
 }
 
-// namedLocation is the location MimirClient names once snap is applied over
-// its start values. A value MimirClient would reject leaves that part of
-// current, as applying it would.
-func namedLocation(snap models.Snapshot, start map[models.ItemRef]string, current location) location {
+// namedLocation is the location MimirClient's poll self names once snap is
+// applied over its start values and Local Values. A value MimirClient would
+// reject leaves that part of current, as applying it would.
+func namedLocation(snap models.Snapshot, self *configPoll, current location) location {
 	value := func(item string) string {
-		key := models.ItemRef{Name: item, Type: models.TypeString}
-		if v, ok := snap.Value(key); ok {
-			return v
-		}
-
-		return start[key]
+		return self.valueFor(snap, models.ItemRef{Name: item, Type: models.TypeString})
 	}
 
 	named := current

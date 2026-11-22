@@ -1,0 +1,9 @@
+{
+  "type_name": "InitialismsConfig",
+  "items": [
+    {"name": "opnsense_url", "description": "A URL", "type": "string", "value": "https://opnsense.example"},
+    {"name": "victorialogs_urls", "description": "URLs", "type": "string_array", "value": "[\"https://a.example\", \"https://b.example\"]"},
+    {"name": "request_ttl", "description": "A TTL in seconds", "type": "int", "value": "30"},
+    {"name": "user_ids", "description": "User IDs", "type": "int_set", "value": "[1, 2, 2]"}
+  ]
+}

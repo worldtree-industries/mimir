@@ -2,6 +2,7 @@ package generator_test
 
 import (
 	"bytes"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -119,6 +120,59 @@ func TestHeaderIsNotThePackageDoc(t *testing.T) {
 	if file.Doc != nil {
 		t.Errorf("generated code has a package doc: %q", file.Doc.Text())
 	}
+}
+
+// Getter and setter names spell initialisms in one case, as Go naming and
+// lint expect of the hand-written code that implements or fakes a Config.
+func TestAccessorNamesSpellInitialismsInOneCase(t *testing.T) {
+	cases := []struct{ item, getter, setter string }{
+		{"opnsense_url", "GetOpnsenseURL", "setOpnsenseURL"},
+		{"victorialogs_urls", "GetVictorialogsURLs", "setVictorialogsURLs"},
+		{"user_ids", "GetUserIDs", "setUserIDs"},
+		{"api_key", "GetAPIKey", "setAPIKey"},
+		{"db_url", "GetDBURL", "setDBURL"},
+		{"sha256_sum", "GetSha256Sum", "setSha256Sum"},
+		{"foo", "GetFoo", "setFoo"},
+		{"s_arr", "GetSArr", "setSArr"},
+	}
+
+	items := make([]string, 0, len(cases))
+	for _, c := range cases {
+		items = append(items, `{"name":"`+c.item+`","description":"","type":"string","value":""}`)
+	}
+	input := []byte(`{"type_name":"NamesConfig","items":[` + strings.Join(items, ",") + `]}`)
+
+	got, err := generator.Generate(input, "names", "example.com/names")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	methods := methodNames(t, got)
+
+	for _, c := range cases {
+		for _, want := range []string{c.getter, c.setter} {
+			if !methods[want] {
+				t.Errorf("Item %q: no method %s", c.item, want)
+			}
+		}
+	}
+}
+
+func methodNames(t *testing.T, src []byte) map[string]bool {
+	t.Helper()
+
+	file, err := parser.ParseFile(token.NewFileSet(), "config_gen.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse generated code: %v", err)
+	}
+
+	names := make(map[string]bool)
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv != nil {
+			names[fn.Name.Name] = true
+		}
+	}
+
+	return names
 }
 
 func TestOldNamespaceKeyStillNamesTheType(t *testing.T) {

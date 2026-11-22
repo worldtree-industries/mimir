@@ -202,14 +202,39 @@ func getterName(name string) string {
 	return "Get" + capitalize(name)
 }
 
+// capitalize turns an Item name into the exported-style Go identifier its
+// accessors are named for: each "_"-separated part capitalized, with
+// initialisms (and their plurals) in one case, so "user_ids" is "UserIDs".
 func capitalize(s string) string {
 	parts := strings.Split(s, "_")
 	for i, part := range parts {
-		if part != "" {
+		upper := strings.ToUpper(part)
+		switch {
+		case part == "":
+		case initialisms[upper]:
+			parts[i] = upper
+		case strings.HasSuffix(part, "s") && initialisms[upper[:len(upper)-1]]:
+			parts[i] = upper[:len(upper)-1] + "s"
+		default:
 			parts[i] = strings.ToUpper(part[:1]) + part[1:]
 		}
 	}
 	return strings.Join(parts, "")
+}
+
+// initialisms are the words the Go linters (revive's var-naming and
+// staticcheck's ST1003) want in one case: their default lists combined.
+//
+//nolint:gochecknoglobals // a fixed, read-only lookup table
+var initialisms = map[string]bool{
+	"ACL": true, "AMQP": true, "API": true, "ASCII": true, "CPU": true, "CSS": true,
+	"DB": true, "DNS": true, "EOF": true, "GID": true, "GUID": true, "HTML": true,
+	"HTTP": true, "HTTPS": true, "ID": true, "IP": true, "JSON": true, "LHS": true,
+	"QPS": true, "RAM": true, "RHS": true, "RPC": true, "RTP": true, "SIP": true,
+	"SLA": true, "SMTP": true, "SQL": true, "SSH": true, "TCP": true, "TLS": true,
+	"TS": true, "TTL": true, "UDP": true, "UI": true, "UID": true, "UUID": true,
+	"URI": true, "URL": true, "UTF8": true, "VM": true, "XML": true, "XMPP": true,
+	"XSRF": true, "XSS": true,
 }
 
 func parseFunc(t models.Type) string {

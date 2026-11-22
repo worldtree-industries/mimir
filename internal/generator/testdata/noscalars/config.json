@@ -1,0 +1,8 @@
+{
+  "type_name": "NoScalarsConfig",
+  "items": [
+    {"name": "name", "description": "A string", "type": "string", "value": "hi"},
+    {"name": "tags", "description": "Strings", "type": "string_array", "value": "[\"a\", \"b\"]"},
+    {"name": "ports", "description": "Int set", "type": "int_set", "value": "[80, 443, 80]"}
+  ]
+}

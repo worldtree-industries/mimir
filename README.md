@@ -70,7 +70,7 @@ func main() {
 }
 ```
 
-Getters start at the Items' Defaults. The Mimir client inside the generated Config then keeps them current: see [Running a Deployable](#running-a-deployable).
+Each Item gets a getter named for it in Go style: `port` is `GetPort`, and initialisms keep one case, so `opnsense_url` is `GetOpnsenseURL` and `user_ids` is `GetUserIDs`. Getters start at the Items' Defaults. The Mimir client inside the generated Config then keeps them current: see [Running a Deployable](#running-a-deployable).
 
 ## Running a Deployable
 

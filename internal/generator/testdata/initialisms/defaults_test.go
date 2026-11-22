@@ -8,21 +8,21 @@ import (
 	"github.com/worldtree-industries/mimir/internal/generator/testdata/initialisms"
 )
 
-// settings is the kind of interface a consumer declares over a Config, so it
-// can hand-write a fake whose method names pass lint.
-type settings interface {
+// itemGetters is the kind of interface a Deployable declares over a Config,
+// so it can hand-write a fake whose method names pass lint.
+type itemGetters interface {
 	GetOpnsenseURL() string
 	GetVictorialogsURLs() []string
 }
 
-type fakeSettings struct{}
+type fakeItemGetters struct{}
 
-func (fakeSettings) GetOpnsenseURL() string        { return "https://fake.example" }
-func (fakeSettings) GetVictorialogsURLs() []string { return nil }
+func (fakeItemGetters) GetOpnsenseURL() string        { return "https://fake.example" }
+func (fakeItemGetters) GetVictorialogsURLs() []string { return nil }
 
 var (
-	_ settings = (*initialisms.InitialismsConfig)(nil)
-	_ settings = fakeSettings{}
+	_ itemGetters = (*initialisms.InitialismsConfig)(nil)
+	_ itemGetters = fakeItemGetters{}
 )
 
 func TestGettersReturnDefaults(t *testing.T) {

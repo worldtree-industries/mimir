@@ -195,26 +195,27 @@ func goType(t models.Type) string {
 }
 
 func setterName(name string) string {
-	return "set" + capitalize(name)
+	return "set" + goIdentifier(name)
 }
 
 func getterName(name string) string {
-	return "Get" + capitalize(name)
+	return "Get" + goIdentifier(name)
 }
 
-// capitalize turns an Item name into the exported-style Go identifier its
+// goIdentifier turns an Item name into the exported-style Go identifier its
 // accessors are named for: each "_"-separated part capitalized, with
 // initialisms (and their plurals) in one case, so "user_ids" is "UserIDs".
-func capitalize(s string) string {
+func goIdentifier(s string) string {
 	parts := strings.Split(s, "_")
 	for i, part := range parts {
 		upper := strings.ToUpper(part)
+		singular := strings.TrimSuffix(upper, "S")
 		switch {
 		case part == "":
 		case initialisms[upper]:
 			parts[i] = upper
-		case strings.HasSuffix(part, "s") && initialisms[upper[:len(upper)-1]]:
-			parts[i] = upper[:len(upper)-1] + "s"
+		case strings.HasSuffix(part, "s") && initialisms[singular]:
+			parts[i] = singular + "s"
 		default:
 			parts[i] = strings.ToUpper(part[:1]) + part[1:]
 		}

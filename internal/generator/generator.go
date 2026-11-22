@@ -56,6 +56,7 @@ type templateData struct {
 	Items          []Item
 	NeedsSet       bool
 	NeedsJSON      bool
+	NeedsStrconv   bool
 }
 
 // ConfigName is the globally unique name of the Config type typeName declared
@@ -103,6 +104,9 @@ func Generate(input []byte, packageName, importPath string) ([]byte, error) {
 		}
 		if needsUnmarshal(item.Type) {
 			data.NeedsJSON = true
+		}
+		if parseFunc(item.Type) != "" {
+			data.NeedsStrconv = true
 		}
 	}
 
@@ -270,7 +274,9 @@ import (
 {{- if .NeedsJSON}}
 	"encoding/json"
 {{- end}}
+{{- if .NeedsStrconv}}
 	"strconv"
+{{- end}}
 	"sync"
 {{if .NeedsSet}}
 	"github.com/dfryer1193/mjolnir/utils/set"

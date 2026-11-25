@@ -53,6 +53,21 @@ func mimirClientOverride(item, value string) models.Override {
 	}
 }
 
+func TestMimirClientRegistersItsThreeItems(t *testing.T) {
+	h := systemtest.New(t)
+	startFooConsumer(t, h)
+
+	var got []string
+	for _, item := range h.Items(t, client.MimirClientConfig) {
+		got = append(got, item.Name)
+	}
+	slices.Sort(got)
+	// No bucket prefix: mimir-server only ever publishes to mimir-<environment>.
+	if want := []string{"object_store_endpoint", "poll_interval", "server_url"}; !slices.Equal(got, want) {
+		t.Errorf("MimirClient's Items = %q, want %q", got, want)
+	}
+}
+
 func TestPollIntervalOverrideTakesEffectLive(t *testing.T) {
 	h := systemtest.New(t)
 	cfg, _ := startFooConsumer(t, h)
@@ -69,39 +84,14 @@ func TestPollIntervalOverrideTakesEffectLive(t *testing.T) {
 	}
 }
 
-func TestBucketPrefixOverrideIsAdoptedOnceSnapshotsAreReadThere(t *testing.T) {
-	h := systemtest.New(t)
-	cfg, d := startFooConsumer(t, h)
-
-	// The Snapshots are mirrored to buckets with a new prefix, where foo
-	// differs so the test can tell which location values come from.
-	h.CreateOverride(t, mimirClientOverride(client.BucketPrefixItem, "mimir-next"))
-	h.CopySnapshot(t, mimirClientDev, h.Store, "mimir-next")
-	h.PutSnapshotAt(t, h.Store, "mimir-next", fooConsumerDev, fooSnapshot("moved"))
-	h.NextPoll(t)
-
-	if got := cfg.GetFoo(); got != "moved" {
-		t.Errorf("after the bucket prefix became mimir-next, GetFoo() = %q, want %q from mimir-next-dev", got, "moved")
-	}
-	if got := d.TakeLocationSwitches(); len(got) != 1 || got[0] != nil {
-		t.Errorf("location switches = %v, want one that succeeded", got)
-	}
-
-	gets := recordGets(h)
-	h.NextPoll(t)
-	if got, want := gets(), []string{"mimir-next-dev"}; !slices.Equal(got, want) {
-		t.Errorf("after the switch the client read buckets %q, want only %q", got, want)
-	}
-}
-
 func TestEndpointOverrideIsAdoptedOnceSnapshotsAreReadThere(t *testing.T) {
 	h := systemtest.New(t)
 	cfg, d := startFooConsumer(t, h)
 
 	other := h.NewEndpoint("https://objects.example")
 	h.CreateOverride(t, mimirClientOverride(client.ObjectStoreEndpointItem, "https://objects.example"))
-	h.CopySnapshot(t, mimirClientDev, other, models.DefaultBucketPrefix)
-	h.PutSnapshotAt(t, other, models.DefaultBucketPrefix, fooConsumerDev, fooSnapshot("moved"))
+	h.CopySnapshot(t, mimirClientDev, other)
+	h.PutSnapshotAt(t, other, fooConsumerDev, fooSnapshot("moved"))
 	h.NextPoll(t)
 
 	if got := cfg.GetFoo(); got != "moved" {
@@ -127,14 +117,11 @@ func TestUnreachableLocationNeverStrandsTheClient(t *testing.T) {
 		"endpoint that can't be reached": {
 			override: mimirClientOverride(client.ObjectStoreEndpointItem, "https://nowhere.example"),
 		},
-		"bucket that can't be read": {
-			override: mimirClientOverride(client.BucketPrefixItem, "broken"),
+		"endpoint whose buckets can't be read": {
+			override: mimirClientOverride(client.ObjectStoreEndpointItem, "https://broken.example"),
 			fault: func(h *systemtest.Harness) {
-				h.Store.SetGetFault(func(bucket, _, _ string) error {
-					if bucket == "broken-dev" {
-						return storeFailures["5xx"]
-					}
-					return nil
+				h.NewEndpoint("https://broken.example").SetGetFault(func(string, string, string) error {
+					return storeFailures["5xx"]
 				})
 			},
 		},
@@ -184,45 +171,42 @@ func checkLocationNeverStrands(t *testing.T, override models.Override, fault fun
 	}
 }
 
-func TestMimirClientStartsFromEnvironmentVariables(t *testing.T) {
+func TestMimirClientStartsFromItsDefaultsWhateverTheEnvironment(t *testing.T) {
 	h := systemtest.New(t)
 	other := h.NewEndpoint("https://objects.example")
-	h.PutSnapshotAt(t, other, "custom", fooConsumerDev, fooSnapshot("from-env-location"))
+	h.PutSnapshotAt(t, other, fooConsumerDev, fooSnapshot("from-env-location"))
 
+	// These variables once set MimirClient's start values (ADR 0007).
 	d := h.NewDeployable(t, systemtest.Deployable{Name: "foo-consumer", Environment: "dev", Env: map[string]string{
 		"MIMIR_OBJECT_STORE_ENDPOINT": "https://objects.example",
 		"MIMIR_BUCKET_PREFIX":         "custom",
 		"MIMIR_POLL_INTERVAL":         "10s",
+		"MIMIR_SERVER_URL":            "http://127.0.0.1:1",
 	}})
 	cfg := foo.NewFooConfig(t.Context(), d.ClientOptions()...)
 	if err := d.AwaitRegistration(t); err != nil {
-		t.Fatalf("Registration failed: %v", err)
+		t.Fatalf("Registration at the Default server URL failed: %v", err)
 	}
-	if got := cfg.GetFoo(); got != "from-env-location" {
-		t.Errorf("GetFoo() = %q, want %q from custom-dev at the endpoint in the environment", got, "from-env-location")
+	if got := cfg.GetFoo(); got != "default" {
+		t.Errorf("GetFoo() = %q, want the Default, nothing being published at mimir-dev", got)
 	}
 
-	h.PutSnapshotAt(t, other, "custom", fooConsumerDev, fooSnapshot("polled"))
-	h.NextPollAfter(t, 10*time.Second)
-	if got := cfg.GetFoo(); got != "polled" {
-		t.Errorf("10s on, with MIMIR_POLL_INTERVAL=10s, GetFoo() = %q, want %q", got, "polled")
+	// No poll 10s on; the poll at the Default 30s reads mimir-dev at the
+	// Default endpoint.
+	h.CreateOverride(t, fooOverride("tuned"))
+	h.Advance(t, 10*time.Second)
+	if got := cfg.GetFoo(); got != "default" {
+		t.Errorf("10s on, GetFoo() = %q, want no poll yet at the Default interval", got)
+	}
+	h.NextPollAfter(t, client.DefaultPollInterval-10*time.Second)
+	if got := cfg.GetFoo(); got != "tuned" {
+		t.Errorf("30s on, GetFoo() = %q, want %q from mimir-dev at the Default endpoint", got, "tuned")
 	}
 }
 
 func TestBadMimirClientValueIsLoggedAndTheLastGoodOneKept(t *testing.T) {
 	h := systemtest.New(t)
-	d := h.NewDeployable(t, systemtest.Deployable{
-		Name:        "foo-consumer",
-		Environment: "dev",
-		Env:         map[string]string{"MIMIR_POLL_INTERVAL": "soon"},
-	})
-	cfg := foo.NewFooConfig(t.Context(), d.ClientOptions()...)
-	if err := d.AwaitRegistration(t); err != nil {
-		t.Fatalf("Registration failed: %v", err)
-	}
-	if !strings.Contains(d.Logs(), "MIMIR_POLL_INTERVAL") {
-		t.Errorf("the bad environment variable wasn't logged; logs:\n%s", d.Logs())
-	}
+	cfg, d := startFooConsumer(t, h)
 
 	// mimir-server accepts any string, but the client rejects a value that
 	// isn't a usable interval and keeps polling at the Default.
@@ -247,17 +231,18 @@ func TestBadMimirClientValueIsLoggedAndTheLastGoodOneKept(t *testing.T) {
 func TestRestartBeginsAgainFromTheStartingLocation(t *testing.T) {
 	h := systemtest.New(t)
 	_, first := startFooConsumer(t, h)
-	h.CreateOverride(t, mimirClientOverride(client.BucketPrefixItem, "mimir-next"))
-	h.CopySnapshot(t, mimirClientDev, h.Store, "mimir-next")
-	h.PutSnapshotAt(t, h.Store, "mimir-next", fooConsumerDev, fooSnapshot("moved"))
+	next := h.NewEndpoint("https://next.example")
+	h.CreateOverride(t, mimirClientOverride(client.ObjectStoreEndpointItem, "https://next.example"))
+	h.CopySnapshot(t, mimirClientDev, next)
+	h.PutSnapshotAt(t, next, fooConsumerDev, fooSnapshot("moved"))
 	h.NextPoll(t)
 	if got := first.TakeLocationSwitches(); len(got) != 1 || got[0] != nil {
 		t.Fatalf("location switches = %v, want one that succeeded", got)
 	}
 
 	// The pod restarts while its starting location can't be read. It
-	// doesn't remember the adopted prefix, so it runs on Defaults rather
-	// than reading mimir-next-dev.
+	// doesn't remember the adopted endpoint, so it runs on Defaults rather
+	// than reading next.example.
 	h.Store.SetGetFault(func(bucket, _, _ string) error {
 		if bucket == "mimir-dev" {
 			return storeFailures["network error"]
@@ -275,7 +260,7 @@ func TestRestartBeginsAgainFromTheStartingLocation(t *testing.T) {
 	h.Store.SetGetFault(nil)
 	h.NextPoll(t)
 	if got := cfg.GetFoo(); got != "moved" {
-		t.Errorf("once mimir-dev reads again, GetFoo() = %q, want %q from mimir-next-dev", got, "moved")
+		t.Errorf("once mimir-dev reads again, GetFoo() = %q, want %q from next.example", got, "moved")
 	}
 }
 
@@ -283,7 +268,7 @@ func TestServerURLOverrideTakesEffectLive(t *testing.T) {
 	h := systemtest.New(t)
 	startFooConsumer(t, h)
 
-	// A pod whose MIMIR_SERVER_URL points nowhere can't register.
+	// A pod whose Default server URL reaches nothing can't register.
 	d := h.NewDeployable(t, systemtest.Deployable{Name: "foo-consumer", Environment: "dev", ServerDown: true})
 	foo.NewFooConfig(t.Context(), d.ClientOptions()...)
 	if err := d.AwaitRegistration(t); err == nil {
@@ -299,15 +284,17 @@ func TestServerURLOverrideTakesEffectLive(t *testing.T) {
 	}
 }
 
-func TestBadBucketPrefixOverrideNeverStrandsOrFlaps(t *testing.T) {
+func TestBadEndpointOverrideNeverStrandsOrFlaps(t *testing.T) {
 	cases := map[string]func(h *systemtest.Harness){
-		// Nothing was ever published with the prefix: its buckets are empty
-		// or missing.
-		"prefix with nothing published": func(*systemtest.Harness) {},
+		// Nothing was ever published at the endpoint: its buckets are empty.
+		"endpoint with nothing published": func(h *systemtest.Harness) {
+			h.NewEndpoint("https://nowhere.example")
+		},
 		// The Config's Snapshot is there, but not MimirClient's, so reading
-		// there would set the bucket prefix back to its start value.
-		"prefix without MimirClient's Snapshot": func(h *systemtest.Harness) {
-			h.PutSnapshotAt(t, h.Store, "nowhere", fooConsumerDev, fooSnapshot("stray"))
+		// there would set the endpoint back to its start value.
+		"endpoint without MimirClient's Snapshot": func(h *systemtest.Harness) {
+			stray := h.NewEndpoint("https://nowhere.example")
+			h.PutSnapshotAt(t, stray, fooConsumerDev, fooSnapshot("stray"))
 		},
 	}
 	for name, setUp := range cases {
@@ -316,17 +303,17 @@ func TestBadBucketPrefixOverrideNeverStrandsOrFlaps(t *testing.T) {
 			cfg, d := startFooConsumer(t, h)
 			setUp(h)
 			h.CreateOverride(t, fooOverride("tuned"))
-			h.CreateOverride(t, mimirClientOverride(client.BucketPrefixItem, "nowhere"))
+			h.CreateOverride(t, mimirClientOverride(client.ObjectStoreEndpointItem, "https://nowhere.example"))
 
 			for poll := range 3 {
 				h.NextPoll(t)
 				if got := cfg.GetFoo(); got != "tuned" {
-					t.Fatalf("poll %d: GetFoo() = %q, want %q still read from mimir-dev", poll, got, "tuned")
+					t.Fatalf("poll %d: GetFoo() = %q, want %q still read from the Default endpoint", poll, got, "tuned")
 				}
 				for _, err := range d.TakeLocationSwitches() {
 					if err == nil {
 						t.Fatalf(
-							"poll %d: the client moved to a prefix whose MimirClient Snapshot doesn't name it",
+							"poll %d: the client moved to an endpoint whose MimirClient Snapshot doesn't name it",
 							poll,
 						)
 					}

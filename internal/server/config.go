@@ -7,14 +7,11 @@ import (
 	"time"
 
 	"github.com/worldtree-industries/mimir/internal/objectstore"
-	"github.com/worldtree-industries/mimir/models"
 )
 
 // The environment variables mimir-server reads its settings from, beside
 // DATABASE_URL, PORT and the standard AWS variables for object storage.
 const (
-	// EnvBucketPrefix is the prefix of each Environment's bucket.
-	EnvBucketPrefix = "MIMIR_BUCKET_PREFIX"
 	// EnvReconcileInterval is how often every Snapshot is republished, as a
 	// Go duration.
 	EnvReconcileInterval = "MIMIR_RECONCILE_INTERVAL"
@@ -29,8 +26,7 @@ var errNoObjectStorage = errors.New(
 
 // ConfigFromEnv reads the settings of a real mimir-server through getenv:
 // object storage (S3, from the standard AWS variables, which must configure
-// it), the bucket prefix (EnvBucketPrefix, default models.DefaultBucketPrefix)
-// and the reconcile and expiry intervals (EnvReconcileInterval and
+// it) and the reconcile and expiry intervals (EnvReconcileInterval and
 // EnvExpiryInterval, default DefaultReconcileInterval and
 // DefaultExpiryInterval). Pool, Clock and Logger are left for the caller.
 func ConfigFromEnv(ctx context.Context, getenv func(string) string) (Config, error) {
@@ -44,15 +40,8 @@ func ConfigFromEnv(ctx context.Context, getenv func(string) string) (Config, err
 
 	cfg := Config{
 		ObjectStore:       store,
-		BucketPrefix:      models.DefaultBucketPrefix,
 		ReconcileInterval: DefaultReconcileInterval,
 		ExpiryInterval:    DefaultExpiryInterval,
-	}
-	if prefix := getenv(EnvBucketPrefix); prefix != "" {
-		if err = models.CheckBucketPrefix(prefix); err != nil {
-			return Config{}, fmt.Errorf("%s: %w", EnvBucketPrefix, err)
-		}
-		cfg.BucketPrefix = prefix
 	}
 	if cfg.ReconcileInterval, err = interval(getenv, EnvReconcileInterval, cfg.ReconcileInterval); err != nil {
 		return Config{}, err

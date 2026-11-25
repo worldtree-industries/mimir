@@ -26,7 +26,7 @@ var errStorageDown = errors.New("object storage didn't answer the last read; sta
 
 // Runtime is what every Config in a process shares: the process's Deployable
 // and Environment, MimirClient (the Config of the client's own poll
-// interval, server URL, object storage endpoint and bucket prefix), object
+// interval, server URL and object storage endpoint), object
 // storage, and the one loop that polls every Config's Snapshot and registers
 // them. MimirClient is therefore read, registered and waited on once per
 // process, however many Configs it reads.
@@ -147,11 +147,10 @@ func (rt *Runtime) start(ctx context.Context, def Definition, onEvent func(Event
 func (rt *Runtime) bootstrap() {
 	ctx, o := rt.ctx, rt.opts
 	rt.logger = o.logger
-	rt.http = &http.Client{Timeout: registrationTimeout}
+	rt.http = o.http
 	rt.values = &mimirClientValues{}
 	rt.self = newConfigPoll(rt.values.definition(), rt.logger.With("config", MimirClientConfig), rt.reportOwnValue)
 	rt.local = readLocalValues(ctx, rt.logger, o.getenv, o.workDir)
-	rt.self.startFromEnv(ctx, o.getenv)
 	rt.self.takeLocalValues(ctx, rt.local)
 	rt.self.applyStart(ctx)
 	rt.at = rt.values.wantedLocation()
@@ -205,7 +204,7 @@ func (rt *Runtime) degradedLogLevel() slog.Level {
 // c starts on Defaults at once and the next poll brings its values.
 func (rt *Runtime) readAtStart(ctx context.Context, c *Client) {
 	rt.mu.Lock()
-	store, at, answering := rt.store, rt.at, rt.answering
+	store, answering := rt.store, rt.answering
 	rt.mu.Unlock()
 
 	switch {
@@ -221,7 +220,7 @@ func (rt *Runtime) readAtStart(ctx context.Context, c *Client) {
 	// If the loop moves to a new location meanwhile, c's ETag is from the
 	// old one; an ETag names its contents, so at worst the next poll reads
 	// the Snapshot afresh.
-	c.emit(Event{Kind: EventPolled, Err: c.poll.poll(startupCtx, store, at.prefix)})
+	c.emit(Event{Kind: EventPolled, Err: c.poll.poll(startupCtx, store)})
 }
 
 // run is the Runtime's loop: it registers what is due, then polls every
@@ -293,7 +292,7 @@ func (rt *Runtime) poll(ctx context.Context) {
 	}
 
 	for _, c := range configs {
-		err := c.poll.poll(ctx, rt.store, rt.at.prefix)
+		err := c.poll.poll(ctx, rt.store)
 		c.emit(Event{Kind: EventPolled, Err: errors.Join(selfErr, err)})
 	}
 }
@@ -302,7 +301,7 @@ func (rt *Runtime) poll(ctx context.Context) {
 // tries to move there with configs. It reports whether the client moved, and
 // the read's error.
 func (rt *Runtime) pollSelf(ctx context.Context, configs []*Client) (bool, error) {
-	err := rt.self.poll(ctx, rt.store, rt.at.prefix)
+	err := rt.self.poll(ctx, rt.store)
 	rt.mu.Lock()
 	rt.answering = err == nil
 	rt.mu.Unlock()
@@ -350,7 +349,7 @@ func (rt *Runtime) switchTo(ctx context.Context, loc location, configs []*Client
 	store, err := rt.storeFor(ctx, loc)
 	var self fetched
 	if err == nil {
-		self, err = rt.self.fetch(ctx, store, loc.prefix, "")
+		self, err = rt.self.fetch(ctx, store, "")
 	}
 	if err == nil {
 		if named := namedLocation(self.snap, rt.self, loc); named != loc {
@@ -362,7 +361,7 @@ func (rt *Runtime) switchTo(ctx context.Context, loc location, configs []*Client
 		if err != nil {
 			break
 		}
-		fetchedConfigs[i], err = c.poll.fetch(ctx, store, loc.prefix, "")
+		fetchedConfigs[i], err = c.poll.fetch(ctx, store, "")
 	}
 	if err != nil {
 		err = fmt.Errorf("switch to %s: %w", loc, err)

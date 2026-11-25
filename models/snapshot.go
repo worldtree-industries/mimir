@@ -2,8 +2,9 @@ package models
 
 import "slices"
 
-// DefaultBucketPrefix is the bucket prefix used unless one is configured.
-const DefaultBucketPrefix = "mimir"
+// BucketPrefix is the prefix of every Environment's bucket,
+// "mimir-<environment>". It is fixed (ADR 0007).
+const BucketPrefix = "mimir"
 
 // Snapshot is the published values for one Namespace, with Precedence already
 // applied. It holds only Items with an applicable Override; every other Item
@@ -47,12 +48,12 @@ type SnapshotLocation struct {
 	Key    string
 }
 
-// SnapshotLocationFor is the location of ns's Snapshot (ADR 0006): bucket
-// "<prefix>-<environment>", object "<config>/<deployable>.json". Clients
-// construct it themselves; they never ask the server.
-func SnapshotLocationFor(prefix string, ns Namespace) SnapshotLocation {
+// SnapshotLocationFor is the location of ns's Snapshot (ADR 0006, ADR
+// 0007): bucket "mimir-<environment>", object "<config>/<deployable>.json".
+// Clients construct it themselves; they never ask the server.
+func SnapshotLocationFor(ns Namespace) SnapshotLocation {
 	return SnapshotLocation{
-		Bucket: prefix + "-" + ns.Environment,
+		Bucket: BucketPrefix + "-" + ns.Environment,
 		Key:    ns.Config + "/" + ns.Deployable + ".json",
 	}
 }

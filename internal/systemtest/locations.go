@@ -41,34 +41,27 @@ func (h *Harness) openEndpoint(_ context.Context, endpoint string) (models.Objec
 	return nil, fmt.Errorf("dial %s: %w", endpoint, errUnreachable)
 }
 
-// CopySnapshot copies ns's published Snapshot to the bucket with prefix in
-// to, as when a location's contents are mirrored to another.
-func (h *Harness) CopySnapshot(t *testing.T, ns models.Namespace, to models.ObjectStore, prefix string) {
+// CopySnapshot copies ns's published Snapshot to to, as when a location's
+// contents are mirrored to another.
+func (h *Harness) CopySnapshot(t *testing.T, ns models.Namespace, to models.ObjectStore) {
 	t.Helper()
 
 	snap, ok := h.Snapshot(t, ns)
 	if !ok {
 		t.Fatalf("no Snapshot published for %+v to copy", ns)
 	}
-	h.PutSnapshotAt(t, to, prefix, ns, snap)
+	h.PutSnapshotAt(t, to, ns, snap)
 }
 
-// PutSnapshotAt writes snap as ns's Snapshot to the bucket with prefix in
-// to.
-func (h *Harness) PutSnapshotAt(
-	t *testing.T,
-	to models.ObjectStore,
-	prefix string,
-	ns models.Namespace,
-	snap models.Snapshot,
-) {
+// PutSnapshotAt writes snap as ns's Snapshot to to.
+func (h *Harness) PutSnapshotAt(t *testing.T, to models.ObjectStore, ns models.Namespace, snap models.Snapshot) {
 	t.Helper()
 
 	body, err := json.Marshal(snap)
 	if err != nil {
 		t.Fatal(err)
 	}
-	loc := models.SnapshotLocationFor(prefix, ns)
+	loc := models.SnapshotLocationFor(ns)
 	if err = to.Put(t.Context(), loc.Bucket, loc.Key, body); err != nil {
 		t.Fatalf("write Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
 	}

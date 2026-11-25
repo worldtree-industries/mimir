@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -156,10 +157,10 @@ func newProcess(t *testing.T, w world) *process {
 	srv := httptest.NewServer(http.HandlerFunc(p.serveRegistration))
 	t.Cleanup(srv.Close)
 
-	env := map[string]string{"MIMIR_SERVER_URL": srv.URL}
-	maps.Copy(env, w.env)
+	env := maps.Clone(w.env)
 	opts := []client.Option{
 		client.WithGetenv(func(key string) string { return env[key] }),
+		client.WithHTTPClient(routeDefaultServerTo(t, srv.URL)),
 		client.WithWorkingDir(w.workDir),
 		client.WithClock(p.clock),
 		client.WithLogger(slog.New(slog.NewJSONHandler(&p.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))),
@@ -174,6 +175,33 @@ func newProcess(t *testing.T, w world) *process {
 
 	return p
 }
+
+// routeDefaultServerTo is an HTTP client that sends requests for
+// mimir-server at its Default URL to the server at to.
+func routeDefaultServerTo(t *testing.T, to string) *http.Client {
+	t.Helper()
+
+	target, err := url.Parse(to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, err := url.Parse(client.DefaultServerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return &http.Client{Timeout: waitTimeout, Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Host == def.Host {
+			req = req.Clone(req.Context())
+			req.URL.Scheme, req.URL.Host, req.Host = target.Scheme, target.Host, target.Host
+		}
+		return http.DefaultTransport.RoundTrip(req)
+	})}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 // startFoo starts the test Config in the process.
 func (p *process) startFoo(t *testing.T) *fooValues {
@@ -221,7 +249,7 @@ func (p *process) publish(t *testing.T, ns models.Namespace, values ...models.Sn
 	if err != nil {
 		t.Fatal(err)
 	}
-	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
+	loc := models.SnapshotLocationFor(ns)
 	p.store.put(loc.Bucket+"/"+loc.Key, body)
 }
 
@@ -363,10 +391,10 @@ func TestLocalValueBeatsAnOverrideAtStartAndOnEveryPoll(t *testing.T) {
 	}
 }
 
-func TestMimirClientLocalValueBeatsItsEnvironmentVariable(t *testing.T) {
+func TestMimirClientLocalValueReplacesItsDefault(t *testing.T) {
 	p := newProcess(t, world{
 		workDir: newRepository(t, localLine(client.MimirClientConfig, client.PollIntervalItem, "10s")),
-		env:     map[string]string{"MIMIR_ENVIRONMENT": "dev", "MIMIR_POLL_INTERVAL": "20s"},
+		env:     map[string]string{"MIMIR_ENVIRONMENT": "dev"},
 	})
 
 	p.startFoo(t)

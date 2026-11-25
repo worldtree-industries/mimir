@@ -21,9 +21,8 @@ type configPoll struct {
 	report func(Event)
 
 	// start is each Item's value before any Override: its Local Value if it
-	// has one, or else for MimirClient the environment variable it starts
-	// from, or else its Default. Overrides replace it unless it is a Local
-	// Value.
+	// has one, or else its Default. Overrides replace it unless it is a
+	// Local Value.
 	start map[models.ItemRef]string
 	// local is the Items whose start value is a Local Value, which no
 	// Override replaces.
@@ -65,10 +64,10 @@ type fetched struct {
 	etag      string
 }
 
-// fetch reads the Config's Snapshot from store with bucket prefix prefix. A
+// fetch reads the Config's Snapshot from store. A
 // missing Snapshot is an empty one: no Overrides.
-func (p *configPoll) fetch(ctx context.Context, store models.ObjectReader, prefix, etag string) (fetched, error) {
-	loc := models.SnapshotLocationFor(prefix, p.ns)
+func (p *configPoll) fetch(ctx context.Context, store models.ObjectReader, etag string) (fetched, error) {
+	loc := models.SnapshotLocationFor(p.ns)
 	obj, err := store.Get(ctx, loc.Bucket, loc.Key, etag)
 	switch {
 	case errors.Is(err, models.ErrNotModified):
@@ -91,8 +90,8 @@ func (p *configPoll) fetch(ctx context.Context, store models.ObjectReader, prefi
 // Overrides, so every Item takes its start value; an unchanged Snapshot
 // changes nothing; any other failure is logged, returned, and keeps the
 // current values.
-func (p *configPoll) poll(ctx context.Context, store models.ObjectReader, prefix string) error {
-	f, err := p.fetch(ctx, store, prefix, p.etag)
+func (p *configPoll) poll(ctx context.Context, store models.ObjectReader) error {
+	f, err := p.fetch(ctx, store, p.etag)
 	if err != nil {
 		level := slog.LevelWarn
 		if errors.Is(err, errUndecodable) {
@@ -179,22 +178,4 @@ func (p *configPoll) setItem(ctx context.Context, item ItemDefinition, key model
 
 func (item ItemDefinition) ref() models.ItemRef {
 	return models.ItemRef{Name: item.Name, Type: item.Type}
-}
-
-// startFromEnv makes each Item's start value its environment variable, when
-// that is set and parses. A bad one is logged and the Default used instead.
-func (p *configPoll) startFromEnv(ctx context.Context, getenv func(string) string) {
-	for _, item := range p.def.Items {
-		name := envVar(item.Name)
-		value := getenv(name)
-		if value == "" {
-			continue
-		}
-		if err := item.Set(value); err != nil {
-			p.logger.ErrorContext(ctx, "Ignoring a bad environment variable; using the Default",
-				"variable", name, "value", value, "error", err)
-			continue
-		}
-		p.start[item.ref()] = value
-	}
 }

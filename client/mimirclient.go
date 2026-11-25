@@ -11,9 +11,9 @@ import (
 )
 
 // MimirClientConfig is the name of MimirClient, the Config holding the
-// client's own poll interval, server URL, object storage endpoint and bucket
-// prefix. Like a generated Config's name it is derived from
-// its Go package path and type. Every client registers it alongside the
+// client's own poll interval, server URL and object storage endpoint. Like
+// a generated Config's name it is derived from its Go package path and
+// type. Every client registers it alongside the
 // Config it reads, in the same Deployable and Environment, so operators tune
 // it with Overrides and Precedence like any other Config.
 const MimirClientConfig = "github.com/worldtree-industries/mimir/client.MimirClient"
@@ -24,29 +24,14 @@ const mimirClientDisplayName = "MimirClient"
 // MimirClient's Items. All are strings.
 const (
 	// PollIntervalItem is how often the Snapshot is polled, as a Go
-	// duration such as "30s". It starts from MIMIR_POLL_INTERVAL.
+	// duration such as "30s".
 	PollIntervalItem = "poll_interval"
-	// ServerURLItem is mimir-server's base URL, used for Registration. It
-	// starts from MIMIR_SERVER_URL.
+	// ServerURLItem is mimir-server's base URL, used for Registration.
 	ServerURLItem = "server_url"
 	// ObjectStoreEndpointItem is the object storage endpoint Snapshots are
 	// read from; empty means the standard S3 settings (AWS_ENDPOINT_URL_S3
-	// or AWS_ENDPOINT_URL). It starts from MIMIR_OBJECT_STORE_ENDPOINT.
+	// or AWS_ENDPOINT_URL).
 	ObjectStoreEndpointItem = "object_store_endpoint"
-	// BucketPrefixItem is the prefix of each Environment's bucket,
-	// "<prefix>-<environment>" (ADR 0006). It starts from
-	// MIMIR_BUCKET_PREFIX.
-	BucketPrefixItem = "bucket_prefix"
-)
-
-// The environment variables each MimirClient Item starts from. This layer
-// between the Defaults and the Overrides exists for MimirClient only, so a
-// client can find its Snapshots before it has read any.
-const (
-	envPollInterval = "MIMIR_POLL_INTERVAL"
-	envServerURL    = "MIMIR_SERVER_URL"
-	envEndpoint     = "MIMIR_OBJECT_STORE_ENDPOINT"
-	envBucketPrefix = "MIMIR_BUCKET_PREFIX"
 )
 
 // minPollInterval is the shortest poll interval accepted, so a slip in an
@@ -58,11 +43,10 @@ var (
 	errURL          = errors.New("must be an absolute http or https URL")
 )
 
-// location is where a client reads Snapshots: an object storage endpoint
-// and a bucket prefix.
+// location is where a client reads Snapshots: an object storage endpoint.
+// The buckets there are always mimir-<environment> (ADR 0007).
 type location struct {
 	endpoint string
-	prefix   string
 }
 
 func (l location) String() string {
@@ -71,7 +55,7 @@ func (l location) String() string {
 		endpoint = "the default endpoint"
 	}
 
-	return fmt.Sprintf("bucket prefix %q at %s", l.prefix, endpoint)
+	return endpoint
 }
 
 // mimirClientValues are the current values of MimirClient's Items. Its
@@ -100,7 +84,7 @@ func (s *mimirClientValues) definition() Definition {
 				Name:        ServerURLItem,
 				Type:        models.TypeString,
 				Description: "mimir-server's base URL, used for Registration.",
-				Default:     defaultServerURL,
+				Default:     DefaultServerURL,
 				Set:         s.setServerURL,
 			},
 			{
@@ -111,32 +95,8 @@ func (s *mimirClientValues) definition() Definition {
 				Default: "",
 				Set:     s.setEndpoint,
 			},
-			{
-				Name: BucketPrefixItem,
-				Type: models.TypeString,
-				Description: "The prefix of each Environment's bucket, <prefix>-<environment>. " +
-					"A new prefix is used only once a Snapshot has been read with it.",
-				Default: models.DefaultBucketPrefix,
-				Set:     s.setBucketPrefix,
-			},
 		},
 	}
-}
-
-// envVar is the environment variable an Item of MimirClient starts from.
-func envVar(item string) string {
-	switch item {
-	case PollIntervalItem:
-		return envPollInterval
-	case ServerURLItem:
-		return envServerURL
-	case ObjectStoreEndpointItem:
-		return envEndpoint
-	case BucketPrefixItem:
-		return envBucketPrefix
-	}
-
-	return ""
 }
 
 func (s *mimirClientValues) setPollInterval(value string) error {
@@ -178,21 +138,9 @@ func (s *mimirClientValues) setEndpoint(value string) error {
 	return nil
 }
 
-func (s *mimirClientValues) setBucketPrefix(value string) error {
-	if err := models.CheckBucketPrefix(value); err != nil {
-		return err
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.wanted.prefix = value
-
-	return nil
-}
-
 // namedLocation is the location MimirClient's poll self names once snap is
 // applied over its start values and Local Values. A value MimirClient would
-// reject leaves that part of current, as applying it would.
+// reject leaves current, as applying it would.
 func namedLocation(snap models.Snapshot, self *configPoll, current location) location {
 	value := func(item string) string {
 		return self.valueFor(snap, models.ItemRef{Name: item, Type: models.TypeString})
@@ -201,9 +149,6 @@ func namedLocation(snap models.Snapshot, self *configPoll, current location) loc
 	named := current
 	if endpoint := value(ObjectStoreEndpointItem); endpoint == "" || checkURL(endpoint) == nil {
 		named.endpoint = endpoint
-	}
-	if prefix := value(BucketPrefixItem); models.CheckBucketPrefix(prefix) == nil {
-		named.prefix = prefix
 	}
 
 	return named

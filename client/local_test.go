@@ -433,6 +433,17 @@ func TestBadLocalConfigLinesAreLoggedAndTheRestApply(t *testing.T) {
 	}
 }
 
+func TestAnOverlongLocalConfigLineIsSkippedAndTheRestApply(t *testing.T) {
+	p := newProcess(t, world{workDir: newRepository(t,
+		localLine(fooConfig, "foo", strings.Repeat("x", 2<<20)+`"`),
+		localLine(fooConfig, "bar", "42"),
+	)})
+
+	if got := p.startFoo(t).Bar(); got != 42 {
+		t.Errorf("bar = %d, want the Local Value 42 on the line after a 2 MiB one", got)
+	}
+}
+
 func TestLocalValuesInUseAreLoggedOncePerConfig(t *testing.T) {
 	p := newProcess(t, world{workDir: newRepository(t,
 		localLine(fooConfig, "foo", "local"),

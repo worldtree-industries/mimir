@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -12,16 +11,11 @@ import (
 	"path/filepath"
 
 	"github.com/dfryer1193/mjolnir/utils/environment"
-
-	"github.com/worldtree-industries/mimir/models"
 )
 
 // localConfigFile is where Local Values are set, relative to the root of the
 // repository the Deployable runs from.
 const localConfigFile = ".mimir/config"
-
-// maxLocalLine bounds one line of the local config file.
-const maxLocalLine = 1 << 20
 
 // localValues are the Local Values read from the local config file: for each
 // Config, each Item's value by Item name. found is whether there was a file
@@ -104,10 +98,10 @@ func repositoryRoot(dir string) (string, bool) {
 func parseLocalValues(ctx context.Context, logger *slog.Logger, path string, data []byte) localValues {
 	local := localValues{found: true, path: path, values: map[string]map[string]string{}}
 
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(nil, maxLocalLine)
-	for n := 1; scanner.Scan(); n++ {
-		text := bytes.TrimSpace(scanner.Bytes())
+	n := 0
+	for raw := range bytes.Lines(data) {
+		n++
+		text := bytes.TrimSpace(raw)
 		if len(text) == 0 {
 			continue
 		}
@@ -131,9 +125,6 @@ func parseLocalValues(ctx context.Context, logger *slog.Logger, path string, dat
 				"line", n, "config", line.Config, "item", line.Item)
 		}
 		items[line.Item] = *line.Value
-	}
-	if err := scanner.Err(); err != nil {
-		logger.ErrorContext(ctx, "Can't read the rest of the local config file", "error", err)
 	}
 
 	return local
@@ -180,27 +171,4 @@ func (p *configPoll) takeLocalValues(ctx context.Context, local localValues) {
 		p.logger.WarnContext(ctx, "Using Local Values, which replace any Override",
 			"path", local.path, slog.Group("values", taken...))
 	}
-}
-
-// valueFor is the value key takes once snap is applied: its Local Value if
-// it has one, or else its value in snap, or else its start value.
-func (p *configPoll) valueFor(snap models.Snapshot, key models.ItemRef) string {
-	if !p.local[key] {
-		if value, ok := snap.Value(key); ok {
-			return value
-		}
-	}
-
-	return p.start[key]
-}
-
-// workingDir is the process's working directory, or empty if it can't be
-// determined.
-func workingDir() string {
-	dir, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-
-	return dir
 }

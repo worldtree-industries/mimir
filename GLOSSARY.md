@@ -47,7 +47,7 @@ A value set through Mimir for one Item within a Scope, replacing the Item's Defa
 _Avoid_: Value (on its own), setting, patch
 
 **Local Value**:
-A value for an Item set in the repository's committed local config file, used only when the Deployable runs from a checkout of that repository outside staging and prod. It replaces both the Item's Default and any Override, but it isn't an Override: it never goes through Mimir.
+A value for an Item set in the repository's committed local config file, used only when the Deployable runs from a checkout of that repository, and never in staging, prod or an Environment it doesn't recognise. It replaces both the Item's Default and any Override, but it isn't an Override: it never goes through Mimir.
 _Avoid_: Local Override, local default, dev value
 
 **Precedence**:

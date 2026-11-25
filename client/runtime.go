@@ -109,7 +109,11 @@ func (rt *Runtime) start(ctx context.Context, def Definition, onEvent func(Event
 	c.poll.takeLocalValues(ctx, rt.local)
 	c.poll.applyStart(ctx)
 	if !rt.located {
-		logger.Log(ctx, rt.localLevel(), "Can't determine the Namespace; running on Defaults and Local Values only")
+		logger.Log(
+			ctx,
+			rt.degradedLogLevel(),
+			"Can't determine the Namespace; running on Defaults and Local Values only",
+		)
 		return c
 	}
 	c.poll.ns = models.Namespace{Config: def.Config, Deployable: rt.deployable, Environment: rt.env}
@@ -154,7 +158,7 @@ func (rt *Runtime) bootstrap() {
 
 	ns, err := discoverNamespace(MimirClientConfig, o.getenv, o.buildPath)
 	if err != nil {
-		rt.logger.Log(ctx, rt.localLevel(),
+		rt.logger.Log(ctx, rt.degradedLogLevel(),
 			"Can't determine the Namespace; every Config runs on Defaults and Local Values only", "error", err)
 		return
 	}
@@ -168,7 +172,11 @@ func (rt *Runtime) bootstrap() {
 		rt.openStore = s3Opener(o.getenv)
 	}
 	if rt.openStore == nil {
-		rt.logger.Log(ctx, rt.localLevel(), "No object storage configured; running on Defaults and Local Values only")
+		rt.logger.Log(
+			ctx,
+			rt.degradedLogLevel(),
+			"No object storage configured; running on Defaults and Local Values only",
+		)
 		return
 	}
 
@@ -181,10 +189,10 @@ func (rt *Runtime) bootstrap() {
 	_, _ = rt.pollSelf(startupCtx, nil)
 }
 
-// localLevel is how loudly to log running without a Namespace or object
+// degradedLogLevel is how loudly to log running without a Namespace or object
 // storage: normal when running from a checkout with a local config file,
 // an error otherwise.
-func (rt *Runtime) localLevel() slog.Level {
+func (rt *Runtime) degradedLogLevel() slog.Level {
 	if rt.local.found {
 		return slog.LevelInfo
 	}

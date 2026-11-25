@@ -189,6 +189,17 @@ func newOptions(opts []Option) options {
 	return o
 }
 
+// workingDir is the process's working directory, or empty if it can't be
+// determined.
+func workingDir() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+
+	return dir
+}
+
 // WithRuntime makes the Config share rt rather than the process's own
 // Runtime, as a test standing in for several processes does.
 func WithRuntime(rt *Runtime) Option {

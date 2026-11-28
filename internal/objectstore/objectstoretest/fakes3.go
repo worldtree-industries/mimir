@@ -43,6 +43,16 @@ func (f *FakeS3) Put(bucket, key string, body []byte) {
 	f.objects["/"+bucket+"/"+key] = body
 }
 
+// Has reports whether an object is stored at bucket/key.
+func (f *FakeS3) Has(bucket, key string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	_, ok := f.objects["/"+bucket+"/"+key]
+
+	return ok
+}
+
 func (f *FakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
@@ -15,10 +16,10 @@ import (
 // often a client polls its Snapshots unless tuned.
 const DefaultPollInterval = 30 * time.Second
 
-// defaultServerURL is the Default of MimirClient's server URL. It names the
+// DefaultServerURL is the Default of MimirClient's server URL. It names the
 // Service without the cluster domain, so it resolves from any namespace
 // through the pod's DNS search path whatever the cluster domain is.
-const defaultServerURL = "http://mimir-server.mimir-config"
+const DefaultServerURL = "http://mimir-server.mimir-config"
 
 // startupPollTimeout bounds the first poll, which Start waits for so a
 // program begins on its real values.
@@ -60,9 +61,9 @@ const (
 	// getter now returns, as a string.
 	EventValueChanged EventKind = "value_changed"
 	// EventLocationSwitch is a finished attempt to read Snapshots from a new
-	// location (object storage endpoint or bucket prefix) named by the
-	// MimirClient Config. Err is set when it failed and the client kept its
-	// current location; it tries again at the next poll.
+	// location (object storage endpoint) named by the MimirClient Config.
+	// Err is set when it failed and the client kept its current location;
+	// it tries again at the next poll.
 	EventLocationSwitch EventKind = "location_switch"
 	// EventValueRejected is a value that doesn't parse as its Item's type:
 	// Value is the rejected value, Err why, and the Item keeps its last good
@@ -107,8 +108,8 @@ type Client struct {
 // process's last read, so a cold start with storage down waits once, not
 // once per Config.
 //
-// MimirClient starts from environment variables or its Defaults whenever a
-// process starts, so an Override that moved a client somewhere bad never
+// MimirClient starts from its Defaults whenever a process starts (ADR
+// 0007), so an Override that moved a client somewhere bad never
 // survives a restart: it is adopted again only once it has been read from
 // the starting location.
 //
@@ -164,6 +165,7 @@ type Option func(*options)
 type options struct {
 	runtime   *Runtime
 	openStore func(ctx context.Context, endpoint string) (models.ObjectReader, error)
+	http      *http.Client
 	clock     models.Clock
 	logger    *slog.Logger
 	onEvent   func(Event)
@@ -176,6 +178,7 @@ type options struct {
 
 func newOptions(opts []Option) options {
 	o := options{
+		http:      &http.Client{Timeout: registrationTimeout},
 		clock:     realClock{},
 		logger:    log.GetLogger("mimir-client"),
 		getenv:    os.Getenv,
@@ -212,6 +215,18 @@ func WithRuntime(rt *Runtime) Option {
 // variables.
 func WithObjectStores(open func(ctx context.Context, endpoint string) (models.ObjectReader, error)) Option {
 	return func(o *options) { o.openStore = open }
+}
+
+// WithHTTPClient sets the HTTP client Registrations are sent with. It
+// changes how mimir-server is reached, not where: that is always
+// MimirClient's server URL. The client's own timeout replaces the default
+// one, so give it one. Nil changes nothing.
+func WithHTTPClient(c *http.Client) Option {
+	return func(o *options) {
+		if c != nil {
+			o.http = c
+		}
+	}
 }
 
 // WithClock sets the clock that paces polling.

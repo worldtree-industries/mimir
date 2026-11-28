@@ -1,8 +1,5 @@
 package client
 
-// DefaultServerURL exposes the server URL Default to the external tests.
-const DefaultServerURL = defaultServerURL
-
 // LocalConfigFile exposes where Local Values are set, relative to the
 // repository root, to the external tests.
 const LocalConfigFile = localConfigFile

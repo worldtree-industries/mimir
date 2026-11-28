@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -26,6 +27,7 @@ import (
 	"github.com/dfryer1193/mjolnir/utils/log"
 
 	"github.com/worldtree-industries/mimir/client"
+	"github.com/worldtree-industries/mimir/client/clienttest"
 	"github.com/worldtree-industries/mimir/internal/clock"
 	"github.com/worldtree-industries/mimir/internal/objectstore"
 	"github.com/worldtree-industries/mimir/internal/server"
@@ -58,9 +60,11 @@ type Harness struct {
 	URL string
 
 	served *faultyStore
-	prefix string
 	dsn    string
 	pool   *db.Pool
+	// serverEnv, when set, is the environment the servers are configured
+	// from, as a real mimir-server is.
+	serverEnv map[string]string
 
 	rejectRegistrations atomic.Bool
 
@@ -75,11 +79,11 @@ type Harness struct {
 // Option configures a Harness.
 type Option func(*Harness)
 
-// WithBucketPrefix makes the servers publish under bucket prefix prefix
-// rather than the Default, as MIMIR_BUCKET_PREFIX does. The Harness's
-// Snapshot helpers read and write there too.
-func WithBucketPrefix(prefix string) Option {
-	return func(h *Harness) { h.prefix = prefix }
+// WithServerEnv configures the servers from the environment env, as a real
+// mimir-server is configured (server.ConfigFromEnv), so they publish to the
+// object storage env names rather than to Store.
+func WithServerEnv(env map[string]string) Option {
+	return func(h *Harness) { h.serverEnv = env }
 }
 
 // New starts mimir-server in-process against a fresh database, and stops it
@@ -93,7 +97,6 @@ func New(t *testing.T, opts ...Option) *Harness {
 		Store:  store,
 		Clock:  clock.NewFake(Epoch),
 		served: &faultyStore{ObjectStore: store},
-		prefix: models.DefaultBucketPrefix,
 		dsn:    dsn,
 	}
 	for _, opt := range opts {
@@ -143,27 +146,31 @@ func (h *Harness) startServer(t *testing.T) *Replica {
 		expired:    make(chan struct{}, eventBuffer),
 	}
 
-	handler, err := server.New(t.Context(), server.Config{
-		Pool:         pool,
-		ObjectStore:  h.served,
-		BucketPrefix: h.prefix,
-		Clock:        h.Clock,
-		Logger:       log.GetLoggerTo("mimir-server", t.Output()),
-		TestHooks: server.TestHooks{
-			ReconcileFinished: func() {
-				select {
-				case r.reconciled <- struct{}{}:
-				default:
-				}
-			},
-			ExpiryFinished: func() {
-				select {
-				case r.expired <- struct{}{}:
-				default:
-				}
-			},
+	cfg := server.Config{ObjectStore: h.served}
+	if h.serverEnv != nil {
+		if cfg, err = server.ConfigFromEnv(
+			t.Context(),
+			func(key string) string { return h.serverEnv[key] },
+		); err != nil {
+			t.Fatalf("configure mimir-server from its environment: %v", err)
+		}
+	}
+	cfg.Pool, cfg.Clock, cfg.Logger = pool, h.Clock, log.GetLoggerTo("mimir-server", t.Output())
+	cfg.TestHooks = server.TestHooks{
+		ReconcileFinished: func() {
+			select {
+			case r.reconciled <- struct{}{}:
+			default:
+			}
 		},
-	})
+		ExpiryFinished: func() {
+			select {
+			case r.expired <- struct{}{}:
+			default:
+			}
+		},
+	}
+	handler, err := server.New(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("start mimir-server: %v", err)
 	}
@@ -187,14 +194,16 @@ type Deployable struct {
 	// BuildPath is the main package path the Deployable name is derived from
 	// when Name is empty.
 	BuildPath string
-	// ServerDown points the client at a mimir-server that isn't running.
+	// ServerDown makes the Default server URL reach a mimir-server that isn't
+	// running.
 	ServerDown bool
-	// Env holds further environment variables, such as the ones MimirClient's
-	// Items start from.
+	// Env holds further environment variables, such as the AWS ones.
 	Env map[string]string
 	// NoObjectStore gives the client no object storage at all, as when no S3
 	// variables are set.
 	NoObjectStore bool
+	// ObjectStoreDown gives the client object storage it can never open.
+	ObjectStoreDown bool
 }
 
 // RunningDeployable is a Deployable placed in a Harness, recording what its
@@ -260,16 +269,28 @@ func (d *RunningDeployable) processOptions() []client.Option {
 	env := map[string]string{
 		"MIMIR_DEPLOYABLE":  d.Name,
 		"MIMIR_ENVIRONMENT": d.Environment,
-		"MIMIR_SERVER_URL":  serverURL,
 	}
 	maps.Copy(env, d.Env)
+	routed, err := clienttest.RouteDefaultServer(serverURL)
+	if err != nil {
+		panic(err)
+	}
 
 	opts := []client.Option{
 		client.WithGetenv(func(key string) string { return env[key] }),
+		client.WithHTTPClient(routed),
 		client.WithClock(d.h.Clock),
 		client.WithLogger(log.GetLoggerTo("mimir-client", &d.logs)),
 	}
-	if !d.NoObjectStore {
+	switch {
+	case d.ObjectStoreDown:
+		opts = append(
+			opts,
+			client.WithObjectStores(func(_ context.Context, endpoint string) (models.ObjectReader, error) {
+				return nil, fmt.Errorf("dial %q: %w", endpoint, errUnreachable)
+			}),
+		)
+	case !d.NoObjectStore:
 		opts = append(opts, client.WithObjectStores(d.h.openEndpoint))
 	}
 	if d.BuildPath != "" {
@@ -467,7 +488,7 @@ func (h *Harness) Ready(t *testing.T) int {
 func (h *Harness) DeleteSnapshot(t *testing.T, ns models.Namespace) {
 	t.Helper()
 
-	loc := models.SnapshotLocationFor(h.prefix, ns)
+	loc := models.SnapshotLocationFor(ns)
 	if err := h.Store.Delete(t.Context(), loc.Bucket, loc.Key); err != nil {
 		t.Fatalf("delete Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
 	}
@@ -477,7 +498,7 @@ func (h *Harness) DeleteSnapshot(t *testing.T, ns models.Namespace) {
 func (h *Harness) SnapshotETag(t *testing.T, ns models.Namespace) string {
 	t.Helper()
 
-	loc := models.SnapshotLocationFor(h.prefix, ns)
+	loc := models.SnapshotLocationFor(ns)
 	obj, err := h.Store.Get(t.Context(), loc.Bucket, loc.Key, "")
 	if err != nil {
 		t.Fatalf("read Snapshot %s/%s: %v", loc.Bucket, loc.Key, err)
@@ -556,7 +577,7 @@ func post(t *testing.T, baseURL, path string, payload any) (int, []byte) {
 func (h *Harness) Snapshot(t *testing.T, ns models.Namespace) (models.Snapshot, bool) {
 	t.Helper()
 
-	loc := models.SnapshotLocationFor(h.prefix, ns)
+	loc := models.SnapshotLocationFor(ns)
 	obj, err := h.Store.Get(t.Context(), loc.Bucket, loc.Key, "")
 	if errors.Is(err, models.ErrNotFound) {
 		return models.Snapshot{}, false
@@ -578,7 +599,7 @@ func (h *Harness) Snapshot(t *testing.T, ns models.Namespace) (models.Snapshot, 
 func (h *Harness) PutSnapshot(t *testing.T, ns models.Namespace, snap models.Snapshot) {
 	t.Helper()
 
-	h.PutSnapshotAt(t, h.Store, h.prefix, ns, snap)
+	h.PutSnapshotAt(t, h.Store, ns, snap)
 }
 
 func await(t *testing.T, ch <-chan error, what string) error {

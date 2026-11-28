@@ -102,10 +102,8 @@ func TestRegistrationFailureLeavesDefaults(t *testing.T) {
 
 func TestClientRegistersEvenWithoutObjectStorage(t *testing.T) {
 	cases := map[string]systemtest.Deployable{
-		"none configured": {Name: "foo-consumer", Environment: "dev", NoObjectStore: true},
-		"one that can't be opened": {Name: "foo-consumer", Environment: "dev", Env: map[string]string{
-			"MIMIR_OBJECT_STORE_ENDPOINT": "https://nowhere.example",
-		}},
+		"none configured":          {Name: "foo-consumer", Environment: "dev", NoObjectStore: true},
+		"one that can't be opened": {Name: "foo-consumer", Environment: "dev", ObjectStoreDown: true},
 	}
 	for name, deployable := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -134,7 +132,7 @@ func TestClientReadsS3FromTheStandardAWSVariables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, fooConsumerDev)
+	loc := models.SnapshotLocationFor(fooConsumerDev)
 	s3.Put(loc.Bucket, loc.Key, body)
 
 	// No object storage is passed in: the client opens S3 from the

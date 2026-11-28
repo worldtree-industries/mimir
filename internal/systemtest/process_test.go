@@ -76,7 +76,7 @@ func TestProcessRunsOneMimirClientForAllItsConfigs(t *testing.T) {
 
 	reads := gets()
 	for _, ns := range []models.Namespace{mimirClientDev, fooConsumerDev, allTypesConsumerDev} {
-		key := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns).Key
+		key := models.SnapshotLocationFor(ns).Key
 		if reads[key] != 1 {
 			t.Errorf("one poll read %s %d times, want once", key, reads[key])
 		}

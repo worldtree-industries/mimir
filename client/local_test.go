@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/worldtree-industries/mimir/client"
+	"github.com/worldtree-industries/mimir/client/clienttest"
 	"github.com/worldtree-industries/mimir/models"
 )
 
@@ -144,7 +145,7 @@ type process struct {
 	registrations []models.Registration
 }
 
-func newProcess(t *testing.T, w world) *process {
+func newProcess(t *testing.T, w world, extra ...client.Option) *process {
 	t.Helper()
 
 	p := &process{
@@ -156,10 +157,14 @@ func newProcess(t *testing.T, w world) *process {
 	srv := httptest.NewServer(http.HandlerFunc(p.serveRegistration))
 	t.Cleanup(srv.Close)
 
-	env := map[string]string{"MIMIR_SERVER_URL": srv.URL}
-	maps.Copy(env, w.env)
+	routed, err := clienttest.RouteDefaultServer(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := maps.Clone(w.env)
 	opts := []client.Option{
 		client.WithGetenv(func(key string) string { return env[key] }),
+		client.WithHTTPClient(routed),
 		client.WithWorkingDir(w.workDir),
 		client.WithClock(p.clock),
 		client.WithLogger(slog.New(slog.NewJSONHandler(&p.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))),
@@ -170,7 +175,7 @@ func newProcess(t *testing.T, w world) *process {
 			return p.store, nil
 		}))
 	}
-	p.rt = client.NewRuntime(t.Context(), opts...)
+	p.rt = client.NewRuntime(t.Context(), append(opts, extra...)...)
 
 	return p
 }
@@ -221,7 +226,7 @@ func (p *process) publish(t *testing.T, ns models.Namespace, values ...models.Sn
 	if err != nil {
 		t.Fatal(err)
 	}
-	loc := models.SnapshotLocationFor(models.DefaultBucketPrefix, ns)
+	loc := models.SnapshotLocationFor(ns)
 	p.store.put(loc.Bucket+"/"+loc.Key, body)
 }
 
@@ -363,15 +368,22 @@ func TestLocalValueBeatsAnOverrideAtStartAndOnEveryPoll(t *testing.T) {
 	}
 }
 
-func TestMimirClientLocalValueBeatsItsEnvironmentVariable(t *testing.T) {
+func TestMimirClientLocalValueReplacesItsDefault(t *testing.T) {
 	p := newProcess(t, world{
 		workDir: newRepository(t, localLine(client.MimirClientConfig, client.PollIntervalItem, "10s")),
-		env:     map[string]string{"MIMIR_ENVIRONMENT": "dev", "MIMIR_POLL_INTERVAL": "20s"},
+		env:     map[string]string{"MIMIR_ENVIRONMENT": "dev"},
 	})
 
 	p.startFoo(t)
 	await(t, p.polled, "startup poll")
 	p.nextPoll(t, 10*time.Second)
+}
+
+func TestANilHTTPClientChangesNothing(t *testing.T) {
+	p := newProcess(t, world{env: map[string]string{"MIMIR_ENVIRONMENT": "dev"}}, client.WithHTTPClient(nil))
+
+	p.startFoo(t)
+	await(t, p.registered, "Registration")
 }
 
 func TestRegistrationPublishesDefaultsNotLocalValues(t *testing.T) {

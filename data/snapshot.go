@@ -12,19 +12,17 @@ import (
 // Snapshots writes Snapshots to object storage at the locations clients
 // construct for themselves (ADR 0006).
 type Snapshots struct {
-	store  models.ObjectStore
-	prefix string
+	store models.ObjectStore
 }
 
-// NewSnapshots returns a Snapshots writing to store under bucket prefix
-// prefix.
-func NewSnapshots(store models.ObjectStore, prefix string) *Snapshots {
-	return &Snapshots{store: store, prefix: prefix}
+// NewSnapshots returns a Snapshots writing to store.
+func NewSnapshots(store models.ObjectStore) *Snapshots {
+	return &Snapshots{store: store}
 }
 
 // Delete removes ns's Snapshot. Deleting one that isn't there is fine.
 func (s *Snapshots) Delete(ctx context.Context, ns models.Namespace) error {
-	loc := models.SnapshotLocationFor(s.prefix, ns)
+	loc := models.SnapshotLocationFor(ns)
 	if err := s.store.Delete(ctx, loc.Bucket, loc.Key); err != nil {
 		return fmt.Errorf("delete Snapshot %s/%s: %w", loc.Bucket, loc.Key, err)
 	}
@@ -34,7 +32,7 @@ func (s *Snapshots) Delete(ctx context.Context, ns models.Namespace) error {
 
 // Publish writes snap as ns's Snapshot, replacing the one there.
 func (s *Snapshots) Publish(ctx context.Context, ns models.Namespace, snap models.Snapshot) error {
-	loc := models.SnapshotLocationFor(s.prefix, ns)
+	loc := models.SnapshotLocationFor(ns)
 
 	body, err := json.Marshal(snap)
 	if err != nil {
@@ -55,7 +53,7 @@ const probeKey = "readiness-probe"
 // by reading an object that isn't there: not found means the bucket answers;
 // any other failure is an error.
 func (s *Snapshots) Reachable(ctx context.Context, environment string) error {
-	bucket := models.SnapshotLocationFor(s.prefix, models.Namespace{Environment: environment}).Bucket
+	bucket := models.SnapshotLocationFor(models.Namespace{Environment: environment}).Bucket
 
 	_, err := s.store.Get(ctx, bucket, probeKey, "")
 	if err != nil && !errors.Is(err, models.ErrNotFound) && !errors.Is(err, models.ErrNotModified) {

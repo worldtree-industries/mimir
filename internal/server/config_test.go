@@ -32,9 +32,6 @@ func TestServerSettingsDefault(t *testing.T) {
 	if cfg.ObjectStore == nil {
 		t.Error("no object store configured from the AWS variables")
 	}
-	if cfg.BucketPrefix != "mimir" {
-		t.Errorf("BucketPrefix = %q, want %q", cfg.BucketPrefix, "mimir")
-	}
 	if cfg.ReconcileInterval != server.DefaultReconcileInterval {
 		t.Errorf("ReconcileInterval = %v, want %v", cfg.ReconcileInterval, server.DefaultReconcileInterval)
 	}
@@ -45,15 +42,11 @@ func TestServerSettingsDefault(t *testing.T) {
 
 func TestServerSettingsComeFromTheEnvironment(t *testing.T) {
 	cfg, err := server.ConfigFromEnv(t.Context(), s3Env(map[string]string{
-		"MIMIR_BUCKET_PREFIX":      "acme-config",
 		"MIMIR_RECONCILE_INTERVAL": "90s",
 		"MIMIR_EXPIRY_INTERVAL":    "6h",
 	}))
 	if err != nil {
 		t.Fatalf("ConfigFromEnv: %v", err)
-	}
-	if cfg.BucketPrefix != "acme-config" {
-		t.Errorf("BucketPrefix = %q, want %q", cfg.BucketPrefix, "acme-config")
 	}
 	if cfg.ReconcileInterval != 90*time.Second {
 		t.Errorf("ReconcileInterval = %v, want 90s", cfg.ReconcileInterval)
@@ -63,12 +56,25 @@ func TestServerSettingsComeFromTheEnvironment(t *testing.T) {
 	}
 }
 
+func TestServerIgnoresTheBucketPrefixVariable(t *testing.T) {
+	// MIMIR_BUCKET_PREFIX once set the prefix, and refused one S3 can't name
+	// a bucket with. Buckets are now always mimir-<environment> (ADR 0007),
+	// so neither matters.
+	for _, prefix := range []string{"acme-config", "Acme_Config"} {
+		if _, err := server.ConfigFromEnv(
+			t.Context(),
+			s3Env(map[string]string{"MIMIR_BUCKET_PREFIX": prefix}),
+		); err != nil {
+			t.Errorf("ConfigFromEnv with MIMIR_BUCKET_PREFIX=%q: %v", prefix, err)
+		}
+	}
+}
+
 func TestServerRefusesUnusableSettings(t *testing.T) {
 	for name, env := range map[string]map[string]string{
-		"a reconcile interval that isn't a duration":  {"MIMIR_RECONCILE_INTERVAL": "often"},
-		"a zero reconcile interval":                   {"MIMIR_RECONCILE_INTERVAL": "0s"},
-		"a negative expiry interval":                  {"MIMIR_EXPIRY_INTERVAL": "-1h"},
-		"a bucket prefix S3 can't name a bucket with": {"MIMIR_BUCKET_PREFIX": "Acme_Config"},
+		"a reconcile interval that isn't a duration": {"MIMIR_RECONCILE_INTERVAL": "often"},
+		"a zero reconcile interval":                  {"MIMIR_RECONCILE_INTERVAL": "0s"},
+		"a negative expiry interval":                 {"MIMIR_EXPIRY_INTERVAL": "-1h"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := server.ConfigFromEnv(t.Context(), s3Env(env)); err == nil {

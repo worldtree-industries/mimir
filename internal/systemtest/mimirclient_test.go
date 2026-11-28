@@ -1,6 +1,7 @@
 package systemtest_test
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"sync"
@@ -173,8 +174,18 @@ func checkLocationNeverStrands(t *testing.T, override models.Override, fault fun
 
 func TestMimirClientStartsFromItsDefaultsWhateverTheEnvironment(t *testing.T) {
 	h := systemtest.New(t)
+	// Snapshots where the old variables would point: at their endpoint, and
+	// in custom-dev at the Default one.
 	other := h.NewEndpoint("https://objects.example")
-	h.PutSnapshotAt(t, other, fooConsumerDev, fooSnapshot("from-env-location"))
+	h.PutSnapshotAt(t, other, fooConsumerDev, fooSnapshot("at-the-ignored-endpoint"))
+	ignored, err := json.Marshal(fooSnapshot("in-the-ignored-bucket"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := models.SnapshotLocationFor(fooConsumerDev).Key
+	if err = h.Store.Put(t.Context(), "custom-dev", key, ignored); err != nil {
+		t.Fatal(err)
+	}
 
 	// These variables once set MimirClient's start values (ADR 0007).
 	d := h.NewDeployable(t, systemtest.Deployable{Name: "foo-consumer", Environment: "dev", Env: map[string]string{
@@ -184,7 +195,7 @@ func TestMimirClientStartsFromItsDefaultsWhateverTheEnvironment(t *testing.T) {
 		"MIMIR_SERVER_URL":            "http://127.0.0.1:1",
 	}})
 	cfg := foo.NewFooConfig(t.Context(), d.ClientOptions()...)
-	if err := d.AwaitRegistration(t); err != nil {
+	if err = d.AwaitRegistration(t); err != nil {
 		t.Fatalf("Registration at the Default server URL failed: %v", err)
 	}
 	if got := cfg.GetFoo(); got != "default" {

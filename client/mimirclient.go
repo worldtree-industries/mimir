@@ -13,9 +13,9 @@ import (
 // MimirClientConfig is the name of MimirClient, the Config holding the
 // client's own poll interval, server URL and object storage endpoint. Like
 // a generated Config's name it is derived from its Go package path and
-// type. Every client registers it alongside the
-// Config it reads, in the same Deployable and Environment, so operators tune
-// it with Overrides and Precedence like any other Config.
+// type. Every client registers it alongside the Config it reads, in the
+// same Deployable and Environment, so operators tune it with Overrides and
+// Precedence like any other Config.
 const MimirClientConfig = "github.com/worldtree-industries/mimir/client.MimirClient"
 
 // mimirClientDisplayName is MimirClient's short display name.
@@ -44,7 +44,9 @@ var (
 )
 
 // location is where a client reads Snapshots: an object storage endpoint.
-// The buckets there are always mimir-<environment> (ADR 0007).
+// The buckets there are always mimir-<environment> (ADR 0007). It stays a
+// type of its own, though only the endpoint varies, so switching location
+// reads as moving between locations rather than comparing strings.
 type location struct {
 	endpoint string
 }

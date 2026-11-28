@@ -2,9 +2,9 @@ package models
 
 import "slices"
 
-// BucketPrefix is the prefix of every Environment's bucket,
+// bucketPrefix is the prefix of every Environment's bucket,
 // "mimir-<environment>". It is fixed (ADR 0007).
-const BucketPrefix = "mimir"
+const bucketPrefix = "mimir"
 
 // Snapshot is the published values for one Namespace, with Precedence already
 // applied. It holds only Items with an applicable Override; every other Item
@@ -53,7 +53,7 @@ type SnapshotLocation struct {
 // Clients construct it themselves; they never ask the server.
 func SnapshotLocationFor(ns Namespace) SnapshotLocation {
 	return SnapshotLocation{
-		Bucket: BucketPrefix + "-" + ns.Environment,
+		Bucket: bucketPrefix + "-" + ns.Environment,
 		Key:    ns.Config + "/" + ns.Deployable + ".json",
 	}
 }

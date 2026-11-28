@@ -9,7 +9,6 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"github.com/worldtree-industries/mimir/client"
+	"github.com/worldtree-industries/mimir/client/clienttest"
 	"github.com/worldtree-industries/mimir/models"
 )
 
@@ -145,7 +145,7 @@ type process struct {
 	registrations []models.Registration
 }
 
-func newProcess(t *testing.T, w world) *process {
+func newProcess(t *testing.T, w world, extra ...client.Option) *process {
 	t.Helper()
 
 	p := &process{
@@ -157,10 +157,14 @@ func newProcess(t *testing.T, w world) *process {
 	srv := httptest.NewServer(http.HandlerFunc(p.serveRegistration))
 	t.Cleanup(srv.Close)
 
+	routed, err := clienttest.RouteDefaultServer(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	env := maps.Clone(w.env)
 	opts := []client.Option{
 		client.WithGetenv(func(key string) string { return env[key] }),
-		client.WithHTTPClient(routeDefaultServerTo(t, srv.URL)),
+		client.WithHTTPClient(routed),
 		client.WithWorkingDir(w.workDir),
 		client.WithClock(p.clock),
 		client.WithLogger(slog.New(slog.NewJSONHandler(&p.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))),
@@ -171,37 +175,10 @@ func newProcess(t *testing.T, w world) *process {
 			return p.store, nil
 		}))
 	}
-	p.rt = client.NewRuntime(t.Context(), opts...)
+	p.rt = client.NewRuntime(t.Context(), append(opts, extra...)...)
 
 	return p
 }
-
-// routeDefaultServerTo is an HTTP client that sends requests for
-// mimir-server at its Default URL to the server at to.
-func routeDefaultServerTo(t *testing.T, to string) *http.Client {
-	t.Helper()
-
-	target, err := url.Parse(to)
-	if err != nil {
-		t.Fatal(err)
-	}
-	def, err := url.Parse(client.DefaultServerURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return &http.Client{Timeout: waitTimeout, Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.URL.Host == def.Host {
-			req = req.Clone(req.Context())
-			req.URL.Scheme, req.URL.Host, req.Host = target.Scheme, target.Host, target.Host
-		}
-		return http.DefaultTransport.RoundTrip(req)
-	})}
-}
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 // startFoo starts the test Config in the process.
 func (p *process) startFoo(t *testing.T) *fooValues {
@@ -400,6 +377,13 @@ func TestMimirClientLocalValueReplacesItsDefault(t *testing.T) {
 	p.startFoo(t)
 	await(t, p.polled, "startup poll")
 	p.nextPoll(t, 10*time.Second)
+}
+
+func TestANilHTTPClientChangesNothing(t *testing.T) {
+	p := newProcess(t, world{env: map[string]string{"MIMIR_ENVIRONMENT": "dev"}}, client.WithHTTPClient(nil))
+
+	p.startFoo(t)
+	await(t, p.registered, "Registration")
 }
 
 func TestRegistrationPublishesDefaultsNotLocalValues(t *testing.T) {

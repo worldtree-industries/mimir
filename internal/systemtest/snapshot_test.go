@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/worldtree-industries/mimir/internal/generator/testdata/foo"
+	"github.com/worldtree-industries/mimir/internal/objectstore/objectstoretest"
 	"github.com/worldtree-industries/mimir/internal/systemtest"
 	"github.com/worldtree-industries/mimir/models"
 )
@@ -91,5 +92,40 @@ func TestOverrideOfUnregisteredItemIsRejected(t *testing.T) {
 
 	if status, body := h.Post(t, "/v1/overrides", o); status != http.StatusUnprocessableEntity {
 		t.Errorf("create Override of an unregistered Item: status %d, want 422; body %s", status, body)
+	}
+}
+
+func TestServerPublishesToMimirBucketsWhateverTheEnvironment(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "test")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test")
+	s3 := objectstoretest.NewFakeS3(t)
+
+	// MIMIR_BUCKET_PREFIX once set the prefix (ADR 0007).
+	h := systemtest.New(t, systemtest.WithServerEnv(map[string]string{
+		"AWS_ENDPOINT_URL_S3": s3.URL,
+		"MIMIR_BUCKET_PREFIX": "acme-config",
+	}))
+	d := h.NewDeployable(t, systemtest.Deployable{
+		Name:          "foo-consumer",
+		Environment:   "dev",
+		NoObjectStore: true,
+		Env:           map[string]string{"AWS_ENDPOINT_URL_S3": s3.URL},
+	})
+	cfg := foo.NewFooConfig(t.Context(), d.ClientOptions()...)
+	if err := d.AwaitRegistration(t); err != nil {
+		t.Fatalf("Registration failed: %v", err)
+	}
+	h.CreateOverride(t, fooOverride("tuned"))
+	h.NextPoll(t)
+
+	if got := cfg.GetFoo(); got != "tuned" {
+		t.Errorf("GetFoo() = %q, want %q read from mimir-dev", got, "tuned")
+	}
+	key := models.SnapshotLocationFor(fooConsumerDev).Key
+	if !s3.Has("mimir-dev", key) {
+		t.Errorf("no Snapshot published to mimir-dev/%s", key)
+	}
+	if s3.Has("acme-config-dev", key) {
+		t.Errorf("a Snapshot was published to acme-config-dev/%s", key)
 	}
 }

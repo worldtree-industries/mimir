@@ -17,7 +17,6 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -28,6 +27,7 @@ import (
 	"github.com/dfryer1193/mjolnir/utils/log"
 
 	"github.com/worldtree-industries/mimir/client"
+	"github.com/worldtree-industries/mimir/client/clienttest"
 	"github.com/worldtree-industries/mimir/internal/clock"
 	"github.com/worldtree-industries/mimir/internal/objectstore"
 	"github.com/worldtree-industries/mimir/internal/server"
@@ -62,6 +62,9 @@ type Harness struct {
 	served *faultyStore
 	dsn    string
 	pool   *db.Pool
+	// serverEnv, when set, is the environment the servers are configured
+	// from, as a real mimir-server is.
+	serverEnv map[string]string
 
 	rejectRegistrations atomic.Bool
 
@@ -75,6 +78,13 @@ type Harness struct {
 
 // Option configures a Harness.
 type Option func(*Harness)
+
+// WithServerEnv configures the servers from the environment env, as a real
+// mimir-server is configured (server.ConfigFromEnv), so they publish to the
+// object storage env names rather than to Store.
+func WithServerEnv(env map[string]string) Option {
+	return func(h *Harness) { h.serverEnv = env }
+}
 
 // New starts mimir-server in-process against a fresh database, and stops it
 // when the test ends. It skips the test when DATABASE_URL is unset.
@@ -136,26 +146,31 @@ func (h *Harness) startServer(t *testing.T) *Replica {
 		expired:    make(chan struct{}, eventBuffer),
 	}
 
-	handler, err := server.New(t.Context(), server.Config{
-		Pool:        pool,
-		ObjectStore: h.served,
-		Clock:       h.Clock,
-		Logger:      log.GetLoggerTo("mimir-server", t.Output()),
-		TestHooks: server.TestHooks{
-			ReconcileFinished: func() {
-				select {
-				case r.reconciled <- struct{}{}:
-				default:
-				}
-			},
-			ExpiryFinished: func() {
-				select {
-				case r.expired <- struct{}{}:
-				default:
-				}
-			},
+	cfg := server.Config{ObjectStore: h.served}
+	if h.serverEnv != nil {
+		if cfg, err = server.ConfigFromEnv(
+			t.Context(),
+			func(key string) string { return h.serverEnv[key] },
+		); err != nil {
+			t.Fatalf("configure mimir-server from its environment: %v", err)
+		}
+	}
+	cfg.Pool, cfg.Clock, cfg.Logger = pool, h.Clock, log.GetLoggerTo("mimir-server", t.Output())
+	cfg.TestHooks = server.TestHooks{
+		ReconcileFinished: func() {
+			select {
+			case r.reconciled <- struct{}{}:
+			default:
+			}
 		},
-	})
+		ExpiryFinished: func() {
+			select {
+			case r.expired <- struct{}{}:
+			default:
+			}
+		},
+	}
+	handler, err := server.New(t.Context(), cfg)
 	if err != nil {
 		t.Fatalf("start mimir-server: %v", err)
 	}
@@ -256,10 +271,14 @@ func (d *RunningDeployable) processOptions() []client.Option {
 		"MIMIR_ENVIRONMENT": d.Environment,
 	}
 	maps.Copy(env, d.Env)
+	routed, err := clienttest.RouteDefaultServer(serverURL)
+	if err != nil {
+		panic(err)
+	}
 
 	opts := []client.Option{
 		client.WithGetenv(func(key string) string { return env[key] }),
-		client.WithHTTPClient(serverRoute(serverURL)),
+		client.WithHTTPClient(routed),
 		client.WithClock(d.h.Clock),
 		client.WithLogger(log.GetLoggerTo("mimir-client", &d.logs)),
 	}
@@ -280,35 +299,6 @@ func (d *RunningDeployable) processOptions() []client.Option {
 
 	return opts
 }
-
-// serverRoute is an HTTP client that sends requests for mimir-server at its
-// Default URL to the server at to, standing in for the cluster's DNS.
-// Requests for any other URL, as a server URL Override names, go unchanged.
-func serverRoute(to string) *http.Client {
-	target, err := url.Parse(to)
-	if err != nil {
-		panic(fmt.Sprintf("server URL %q: %v", to, err))
-	}
-	def, err := url.Parse(client.DefaultServerURL)
-	if err != nil {
-		panic(fmt.Sprintf("server URL Default %q: %v", client.DefaultServerURL, err))
-	}
-
-	return &http.Client{
-		Timeout: awaitTimeout,
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			if req.URL.Host == def.Host {
-				req = req.Clone(req.Context())
-				req.URL.Scheme, req.URL.Host, req.Host = target.Scheme, target.Host, target.Host
-			}
-			return http.DefaultTransport.RoundTrip(req)
-		}),
-	}
-}
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 func (d *RunningDeployable) record(e client.Event) {
 	// Events nobody awaits are dropped rather than left to block the client.

@@ -64,8 +64,8 @@ type fetched struct {
 	etag      string
 }
 
-// fetch reads the Config's Snapshot from store. A
-// missing Snapshot is an empty one: no Overrides.
+// fetch reads the Config's Snapshot from store. A missing Snapshot is an
+// empty one: no Overrides.
 func (p *configPoll) fetch(ctx context.Context, store models.ObjectReader, etag string) (fetched, error) {
 	loc := models.SnapshotLocationFor(p.ns)
 	obj, err := store.Get(ctx, loc.Bucket, loc.Key, etag)

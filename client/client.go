@@ -61,9 +61,9 @@ const (
 	// getter now returns, as a string.
 	EventValueChanged EventKind = "value_changed"
 	// EventLocationSwitch is a finished attempt to read Snapshots from a new
-	// location (object storage endpoint) named by the
-	// MimirClient Config. Err is set when it failed and the client kept its
-	// current location; it tries again at the next poll.
+	// location (object storage endpoint) named by the MimirClient Config.
+	// Err is set when it failed and the client kept its current location;
+	// it tries again at the next poll.
 	EventLocationSwitch EventKind = "location_switch"
 	// EventValueRejected is a value that doesn't parse as its Item's type:
 	// Value is the rejected value, Err why, and the Item keeps its last good
@@ -217,11 +217,16 @@ func WithObjectStores(open func(ctx context.Context, endpoint string) (models.Ob
 	return func(o *options) { o.openStore = open }
 }
 
-// WithHTTPClient sets the HTTP client Registrations are sent with. The
-// default has a 10 second timeout. It changes how mimir-server is reached,
-// not where: that is always MimirClient's server URL.
+// WithHTTPClient sets the HTTP client Registrations are sent with. It
+// changes how mimir-server is reached, not where: that is always
+// MimirClient's server URL. The client's own timeout replaces the default
+// one, so give it one. Nil changes nothing.
 func WithHTTPClient(c *http.Client) Option {
-	return func(o *options) { o.http = c }
+	return func(o *options) {
+		if c != nil {
+			o.http = c
+		}
+	}
 }
 
 // WithClock sets the clock that paces polling.

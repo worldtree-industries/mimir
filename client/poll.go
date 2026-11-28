@@ -20,9 +20,14 @@ type configPoll struct {
 	// report is told about value changes and rejections.
 	report func(Event)
 
-	// start is each Item's value when no Override applies: its Default, or
-	// for MimirClient the environment variable it starts from.
+	// start is each Item's value before any Override: its Local Value if it
+	// has one, or else for MimirClient the environment variable it starts
+	// from, or else its Default. Overrides replace it unless it is a Local
+	// Value.
 	start map[models.ItemRef]string
+	// local is the Items whose start value is a Local Value, which no
+	// Override replaces.
+	local map[models.ItemRef]bool
 	// etag is the ETag of the last Snapshot applied.
 	etag string
 	// good is each Item's last good value: what its getter returns.
@@ -38,6 +43,7 @@ func newConfigPoll(def Definition, logger *slog.Logger, report func(Event)) *con
 		logger:   logger,
 		report:   report,
 		start:    make(map[models.ItemRef]string, len(def.Items)),
+		local:    make(map[models.ItemRef]bool),
 		good:     make(map[models.ItemRef]string, len(def.Items)),
 		rejected: make(map[models.ItemRef]string),
 	}
@@ -111,18 +117,27 @@ func (p *configPoll) apply(ctx context.Context, f fetched) {
 }
 
 // applySnapshot sets every Item to its value in snap, or its start value
-// when snap holds none, reporting each Item whose value changes. An Item
-// already at that value is left alone. A value that doesn't parse is logged
-// and reported once, and the Item keeps its last good value.
+// when snap holds none or it has a Local Value, reporting each Item whose
+// value changes. An Item already at that value is left alone. A value that
+// doesn't parse is logged and reported once, and the Item keeps its last
+// good value.
 func (p *configPoll) applySnapshot(ctx context.Context, snap models.Snapshot) {
 	for _, item := range p.def.Items {
 		key := item.ref()
-		value, ok := snap.Value(key)
-		if !ok {
-			value = p.start[key]
-		}
-		p.setItem(ctx, item, key, value, true)
+		p.setItem(ctx, item, key, p.valueFor(snap, key), true)
 	}
+}
+
+// valueFor is the value key takes once snap is applied: its Local Value if
+// it has one, or else its value in snap, or else its start value.
+func (p *configPoll) valueFor(snap models.Snapshot, key models.ItemRef) string {
+	if !p.local[key] {
+		if value, ok := snap.Value(key); ok {
+			return value
+		}
+	}
+
+	return p.start[key]
 }
 
 // applyStart gives every Item its start value when the client starts.

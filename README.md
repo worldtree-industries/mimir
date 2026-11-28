@@ -76,7 +76,7 @@ Each Item gets a getter named for it in Go style: `port` is `GetPort`, and initi
 
 A generated Config's constructor starts the Mimir client, which:
 
-1. determines its Namespace: the Config's derived name, the Deployable (`MIMIR_DEPLOYABLE`, or else the last element of the binary's main package path, so `cmd/checkout` is `checkout`), and the Environment (`MIMIR_ENVIRONMENT`). The Environment must be one of mjolnir's (`utils/environment`); if it is missing or unknown the client logs an error, skips Registration and polling, and leaves every Item on its Default. mimir-server creates those Environments at startup, lists them at `GET /v1/environments`, and rejects an Override scoped to any other. Without a usable Namespace it logs an error and runs on Defaults only.
+1. determines its Namespace: the Config's derived name, the Deployable (`MIMIR_DEPLOYABLE`, or else the last element of the binary's main package path, so `cmd/checkout` is `checkout`), and the Environment (`MIMIR_ENVIRONMENT`). The Environment must be one of mjolnir's (`utils/environment`); if it is missing or unknown the client logs an error, skips Registration and polling, and leaves every Item on its Default. mimir-server creates those Environments at startup, lists them at `GET /v1/environments`, and rejects an Override scoped to any other. Without a usable Namespace it logs an error and runs on Defaults (and [Local Values](#local-values)) only.
 2. reads its Snapshot from object storage at a location it builds itself: bucket `<prefix>-<environment>` (prefix `mimir` by default), object `<config>/<deployable>.json`. A missing Snapshot means every Item uses its Default.
 3. registers the Config's Items with `mimir-server` in the background, and again every 24 hours so what it still declares never expires. A failed Registration is logged, retried after 5 minutes, and never affects the values. Registration doesn't need object storage: a client with none configured, or none it can open, still registers.
 4. polls the Snapshot every poll interval (30 seconds by default) until the constructor's context is done, with conditional GETs, so an unchanged Snapshot costs almost nothing and changes no values.
@@ -103,6 +103,25 @@ Values are never read from `mimir-server`, so a program that starts while it is 
 - Getters are safe to call from any goroutine while values update.
 
 To react to changes and errors, pass `client.WithEventHandler` to the constructor. It's told about each Item whose value changes (`EventValueChanged`), each rejected value (`EventValueRejected`), each attempt to switch Snapshot location (`EventLocationSwitch`), and each poll and Registration, with `Err` set when one failed. Changes to `MimirClient`'s own Items are logged rather than reported.
+
+### Local Values
+
+Running from a checkout, a program sometimes needs a value that deviates from a Default only there: a local endpoint, say, that no deployed copy should ever use. Set it as a Local Value in `.mimir/config` at the repository root, and commit the file. Usually the right fix is to change the Default instead; keep Local Values for what is truly local-only.
+
+The file is JSONL, one Local Value per line. `config` is the Config's full name (the same name used in Registration and the Snapshot location), `item` the Item's name, and `value` a string encoded like the config file's `value`:
+
+```jsonl
+{"config":"github.com/acme/foo/config.FooConfig","item":"victorialogs_url","value":"http://localhost:9428"}
+{"config":"github.com/worldtree-industries/mimir/client.MimirClient","item":"poll_interval","value":"5s"}
+```
+
+- **Where it's read.** Only at the root of the repository the program runs in: the nearest directory, from the working directory up, holding `.git`. So `go test` finds it from any package; a deployed image, with no `.git`, never reads it, even if the file is copied in.
+- **When.** Only while `MIMIR_ENVIRONMENT` is unset or `dev`; never in `staging`, `prod` or an Environment mjolnir doesn't know. Each Config takes its Local Values once, as it starts: restart to pick up a change.
+- **Precedence.** A Local Value replaces the Item's Default and any Override, at start and on every poll; for `MimirClient` it also replaces the environment variable. Items without one behave as usual. Each Config logs a warning at start listing the Local Values it took, so a stale one can't quietly hide an Override.
+- **Registration** still publishes the compiled-in Defaults. Local Values never leave the process.
+- **Mistakes never stop the program.** A missing file is silent. A line that isn't valid JSON or lacks a field, and a value that doesn't parse as its Item's type, are logged and skipped, and the rest apply. An Item the Config doesn't declare is warned about when it starts, and an Item set twice takes the last line, with a warning.
+
+With a local config file found, running without a Namespace or object storage is normal, so the client logs it at Info rather than as an error.
 
 ## mimir-server
 

@@ -111,6 +111,10 @@ type Client struct {
 // process starts, so an Override that moved a client somewhere bad never
 // survives a restart: it is adopted again only once it has been read from
 // the starting location.
+//
+// Run from a checkout of a repository, outside staging and prod, a Config
+// first takes its Local Values from the repository's .mimir/config file.
+// Each replaces its Item's Default and any Override.
 func Start(ctx context.Context, def Definition, opts ...Option) *Client {
 	o := newOptions(opts)
 	rt := o.runtime
@@ -165,6 +169,9 @@ type options struct {
 	onEvent   func(Event)
 	getenv    func(string) string
 	buildPath string
+	// workDir is where the search for the repository root, and so the local
+	// config file, begins.
+	workDir string
 }
 
 func newOptions(opts []Option) options {
@@ -173,12 +180,24 @@ func newOptions(opts []Option) options {
 		logger:    log.GetLogger("mimir-client"),
 		getenv:    os.Getenv,
 		buildPath: mainPackagePath(),
+		workDir:   workingDir(),
 	}
 	for _, opt := range opts {
 		opt(&o)
 	}
 
 	return o
+}
+
+// workingDir is the process's working directory, or empty if it can't be
+// determined.
+func workingDir() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+
+	return dir
 }
 
 // WithRuntime makes the Config share rt rather than the process's own

@@ -46,6 +46,10 @@ _Avoid_: Target, selector, level
 A value set through Mimir for one Item within a Scope, replacing the Item's Default in every Namespace the Scope covers.
 _Avoid_: Value (on its own), setting, patch
 
+**Local Value**:
+A value for an Item set in the repository's committed local config file, used only when the Deployable runs from a checkout of that repository, and never in staging, prod or an Environment it doesn't recognise. It replaces both the Item's Default and any Override, but it isn't an Override: it never goes through Mimir.
+_Avoid_: Local Override, local default, dev value
+
 **Precedence**:
 The rule that picks one Override when several apply to the same Item in a Namespace: the most specific Scope wins.
 _Avoid_: Priority, ordering, resolution order

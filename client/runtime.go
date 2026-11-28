@@ -45,6 +45,7 @@ type Runtime struct {
 	http       *http.Client
 	values     *mimirClientValues
 	self       *configPoll
+	local      localValues
 	located    bool
 	deployable string
 	env        string
@@ -105,9 +106,14 @@ func (rt *Runtime) start(ctx context.Context, def Definition, onEvent func(Event
 	c := &Client{ctx: ctx, onEvent: onEvent}
 	logger := rt.logger.With("config", def.Config)
 	c.poll = newConfigPoll(def, logger, c.emit)
+	c.poll.takeLocalValues(ctx, rt.local)
 	c.poll.applyStart(ctx)
 	if !rt.located {
-		logger.ErrorContext(ctx, "Can't determine the Namespace; running on Defaults only")
+		logger.Log(
+			ctx,
+			rt.degradedLogLevel(),
+			"Can't determine the Namespace; running on Defaults and Local Values only",
+		)
 		return c
 	}
 	c.poll.ns = models.Namespace{Config: def.Config, Deployable: rt.deployable, Environment: rt.env}
@@ -144,13 +150,16 @@ func (rt *Runtime) bootstrap() {
 	rt.http = &http.Client{Timeout: registrationTimeout}
 	rt.values = &mimirClientValues{}
 	rt.self = newConfigPoll(rt.values.definition(), rt.logger.With("config", MimirClientConfig), rt.reportOwnValue)
+	rt.local = readLocalValues(ctx, rt.logger, o.getenv, o.workDir)
 	rt.self.startFromEnv(ctx, o.getenv)
+	rt.self.takeLocalValues(ctx, rt.local)
 	rt.self.applyStart(ctx)
 	rt.at = rt.values.wantedLocation()
 
 	ns, err := discoverNamespace(MimirClientConfig, o.getenv, o.buildPath)
 	if err != nil {
-		rt.logger.ErrorContext(ctx, "Can't determine the Namespace; every Config runs on Defaults only", "error", err)
+		rt.logger.Log(ctx, rt.degradedLogLevel(),
+			"Can't determine the Namespace; every Config runs on Defaults and Local Values only", "error", err)
 		return
 	}
 	rt.located, rt.deployable, rt.env = true, ns.Deployable, ns.Environment
@@ -163,7 +172,11 @@ func (rt *Runtime) bootstrap() {
 		rt.openStore = s3Opener(o.getenv)
 	}
 	if rt.openStore == nil {
-		rt.logger.ErrorContext(ctx, "No object storage configured; running on Defaults only")
+		rt.logger.Log(
+			ctx,
+			rt.degradedLogLevel(),
+			"No object storage configured; running on Defaults and Local Values only",
+		)
 		return
 	}
 
@@ -174,6 +187,17 @@ func (rt *Runtime) bootstrap() {
 		return
 	}
 	_, _ = rt.pollSelf(startupCtx, nil)
+}
+
+// degradedLogLevel is how loudly to log running without a Namespace or object
+// storage: normal when running from a checkout with a local config file,
+// an error otherwise.
+func (rt *Runtime) degradedLogLevel() slog.Level {
+	if rt.local.found {
+		return slog.LevelInfo
+	}
+
+	return slog.LevelError
 }
 
 // readAtStart reads c's Snapshot once, so the program begins on its real
@@ -329,7 +353,7 @@ func (rt *Runtime) switchTo(ctx context.Context, loc location, configs []*Client
 		self, err = rt.self.fetch(ctx, store, loc.prefix, "")
 	}
 	if err == nil {
-		if named := namedLocation(self.snap, rt.self.start, loc); named != loc {
+		if named := namedLocation(self.snap, rt.self, loc); named != loc {
 			err = fmt.Errorf("%w: it names %s", errLocationNotNamed, named)
 		}
 	}
